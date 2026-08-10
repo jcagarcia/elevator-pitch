@@ -14,6 +14,11 @@ export interface DotMatrixDisplayProps {
 export function DotMatrixDisplay({ value, label }: DotMatrixDisplayProps): JSX.Element {
   return (
     <span className="dot-matrix" role="status" aria-label={label ? `${label}: ${value}` : value}>
+      {label && (
+        <span className="dot-matrix__label" aria-hidden="true">
+          {label}
+        </span>
+      )}
       <span className="dot-matrix__value" aria-hidden="true">
         {value}
       </span>

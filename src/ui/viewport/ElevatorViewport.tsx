@@ -2,20 +2,37 @@ import { useEffect, useRef, useState } from 'react';
 import { isSoundEnabled, playDelivered, playGaveUp, setSoundEnabled } from '../../audio/sound';
 import { LIVE_MORALE_MAX } from '../../levels/liveScore';
 import type { LevelDef } from '../../levels/types';
-import { computeGeometry, drawIdleShaft, drawLiveState, drawShift, type RenderGeometry } from '../../render/canvas';
+import { ACTIONS, CONDITIONS } from '../../policy/catalog';
+import type { Rule } from '../../policy/types';
 import { LiveRunController, type LiveRunStatus } from '../../render/liveRun';
 import { PlaybackDriver } from '../../render/playback';
-import { activeRuleIdAt, groupRuleFiredByCar } from '../../render/ruleHighlight';
-import { StairwellAnimator } from '../../render/stairwellAnimator';
-import { TICK_RATE } from '../../sim/config';
+import { groupRuleFiredByCar, ruleFiredPulseAt, RULE_FIRED_PULSE_TICKS } from '../../render/ruleHighlight';
+import { buildFloorScenes, ridersOfCar, type FigurePax } from '../../render/sceneBuilder';
+import { DOOR_CLOSE_TICKS, DOOR_OPEN_TICKS, TICK_RATE } from '../../sim/config';
 import { computeScore, initLiveSim, type LiveSim, type SimResult } from '../../sim/simulate';
-import type { CarFrame, SimEvent } from '../../sim/types';
+import type { CarFrame, DoorState } from '../../sim/types';
 import { useEditorStore } from '../../store/editorStore';
 import { PLAYBACK_SPEEDS, usePlaybackStore, type PlaybackSpeed } from '../../store/playbackStore';
 import { DotMatrixDisplay } from '../DotMatrixDisplay';
+import { PassengerFigure } from '../PassengerFigure';
 
-const FALLBACK_WIDTH = 640;
-const FALLBACK_HEIGHT = 480;
+// Pixel constants mirroring index.css's .shift-screen__* rem values (at the
+// standard 16px root), so the absolutely-positioned car block(s) line up
+// with the floor rows they're drawn over. Not pixel-perfect science — a few
+// px of slack reads fine on a chunky, hand-drawn-feeling UI like this one.
+const REM = 16;
+const SHAFT_PAD_X = 1.1 * REM;
+const SHAFT_PAD_Y = 0.9 * REM;
+const FLOOR_ROW_HEIGHT = 3.6 * REM;
+const FLOOR_NUM_WIDTH = 1.8 * REM;
+const ROW_GAP = 0.7 * REM;
+const CAR_LANE_WIDTH = 74;
+const CAR_WIDTH = 62;
+const CAR_HEIGHT = FLOOR_ROW_HEIGHT - 14;
+
+/** First second of a shift reads as START rather than IN PROGRESS — long
+ *  enough to be legible, short enough not to feel stuck. */
+const START_LABEL_TICKS = TICK_RATE;
 
 function formatTick(tick: number): string {
   const totalSeconds = Math.floor(tick / TICK_RATE);
@@ -24,13 +41,74 @@ function formatTick(tick: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-interface LiveHud {
-  tick: number;
-  morale: number;
-  floor: number;
+/** Continuous 0-1 door fraction from a live Car's own door-phase ticks —
+ *  only available while live, since a recorded CarFrame doesn't carry
+ *  doorPhaseTicks (see frameDoorFraction for the review-phase fallback). */
+function liveDoorFraction(doorState: DoorState, doorPhaseTicks: number): number {
+  switch (doorState) {
+    case 'open':
+      return 1;
+    case 'opening':
+      return Math.min(1, doorPhaseTicks / DOOR_OPEN_TICKS);
+    case 'closing':
+      return Math.max(0, 1 - doorPhaseTicks / DOOR_CLOSE_TICKS);
+    default:
+      return 0;
+  }
 }
 
-const INITIAL_HUD: LiveHud = { tick: 0, morale: LIVE_MORALE_MAX, floor: 0 };
+/** Coarser door fraction for review-phase scrubbing, where only the
+ *  discrete DoorState survives in a recorded CarFrame. */
+function frameDoorFraction(doorState: DoorState): number {
+  switch (doorState) {
+    case 'open':
+      return 1;
+    case 'opening':
+    case 'closing':
+      return 0.5;
+    default:
+      return 0;
+  }
+}
+
+function carLeftPx(carIndex: number): number {
+  return SHAFT_PAD_X + FLOOR_NUM_WIDTH + ROW_GAP + carIndex * CAR_LANE_WIDTH;
+}
+
+function carBottomPx(position: number): number {
+  return SHAFT_PAD_Y + position * FLOOR_ROW_HEIGHT + (FLOOR_ROW_HEIGHT - CAR_HEIGHT) / 2;
+}
+
+function carLabel(index: number): string {
+  return `CAR ${String.fromCharCode(65 + index)}`;
+}
+
+interface RulePanelRow {
+  readonly ruleId: string;
+  readonly condText: string;
+  readonly actionText: string;
+  readonly enabled: boolean;
+}
+
+function buildRulePanelRows(rules: readonly Rule[]): RulePanelRow[] {
+  return rules.map((rule) => ({
+    ruleId: rule.id,
+    condText: rule.conditions.map((c) => CONDITIONS[c.id].describe(c.params)).join(' and '),
+    actionText: ACTIONS[rule.action.id].describe(rule.action.params),
+    enabled: rule.enabled,
+  }));
+}
+
+interface CarPose {
+  readonly id: number;
+  readonly position: number;
+  readonly doorFraction: number;
+  readonly riders: readonly FigurePax[];
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
 
 export interface ElevatorViewportProps {
   level: LevelDef;
@@ -39,31 +117,34 @@ export interface ElevatorViewportProps {
    *  full report. The viewport itself switches into a scrubbable review of
    *  what just happened, so this is a notification, not a request for UI. */
   onShiftEnd: (result: SimResult, status: 'succeeded' | 'failed') => void;
-  /** Which car's active rule to report for the live rule highlight. */
+  /** Jump the sidebar to the full rule editor — wired to the mini rule
+   *  panel's "+ ADD RULE" affordance, which is otherwise read-only here. */
+  onRequestRuleEdit?: () => void;
+  /** Which car's floor/active-rule the top bar and rule panel track. */
   watchedCarId?: number;
 }
 
 /**
- * The game's main viewport. A level starts here: as soon as one is picked,
- * a shift begins running in real time against whatever policy is currently
- * loaded, and stays editable — parameter and rule changes elsewhere in the
- * UI take effect on the very next simulated tick (see LiveRunController).
- * When the shift ends (roster exhausted, or morale collapsed) the viewport
- * switches to a review phase that scrubs back through the finished result,
- * reusing the same PlaybackDriver/drawShift the old batch-mode viewport used.
+ * The game's main viewport, rebuilt as a DOM "Shift Screen" per the
+ * "Elevator frustration gauge" design handoff — chunky bordered panels,
+ * hard-offset shadows, and PassengerFigure driving the frustration signal,
+ * rather than canvas drawing. A level starts here: as soon as one is
+ * picked, a shift begins running in real time against whatever policy is
+ * currently loaded, and stays editable — parameter and rule changes
+ * elsewhere in the UI take effect on the very next simulated tick (see
+ * LiveRunController). When the shift ends the viewport switches to a
+ * review phase that scrubs back through the finished result, reusing the
+ * same PlaybackDriver the old batch-mode viewport used.
  */
-export function ElevatorViewport({ level, onShiftEnd, watchedCarId = 0 }: ElevatorViewportProps): JSX.Element {
-  const frameRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const geometryRef = useRef<RenderGeometry>(computeGeometry(FALLBACK_WIDTH, FALLBACK_HEIGHT, level.floors, level.carCount));
-
+export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watchedCarId = 0 }: ElevatorViewportProps): JSX.Element {
   const liveSimRef = useRef<LiveSim | null>(null);
   const liveControllerRef = useRef<LiveRunController | null>(null);
-  const stairwellRef = useRef(new StairwellAnimator());
   const framesRef = useRef<CarFrame[][]>([]);
   const frustrationHistoryRef = useRef<Float32Array[]>([]);
   const reviewDriverRef = useRef<PlaybackDriver | null>(null);
   const reviewEventIndexRef = useRef(0);
+  const lastScannedEventIndexRef = useRef(0);
+  const lastFiredRef = useRef<{ ruleId: string; tick: number } | null>(null);
 
   const onShiftEndRef = useRef(onShiftEnd);
   useEffect(() => {
@@ -71,64 +152,30 @@ export function ElevatorViewport({ level, onShiftEnd, watchedCarId = 0 }: Elevat
   }, [onShiftEnd]);
 
   const [phase, setPhase] = useState<'live' | 'review'>('live');
-  const [hud, setHud] = useState<LiveHud>(INITIAL_HUD);
+  const [liveTick, setLiveTick] = useState(0);
+  const [liveMorale, setLiveMorale] = useState(LIVE_MORALE_MAX);
+  const [pulsedRuleId, setPulsedRuleId] = useState<string | null>(null);
   const [finishedResult, setFinishedResult] = useState<SimResult | null>(null);
   const [finishedStatus, setFinishedStatus] = useState<LiveRunStatus | null>(null);
   const [restartToken, setRestartToken] = useState(0);
   const [soundOn, setSoundOn] = useState(isSoundEnabled());
 
+  const policy = useEditorStore((s) => s.policy);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const speed = usePlaybackStore((s) => s.speed);
   const currentTick = usePlaybackStore((s) => s.currentTick);
-  const seekRequestId = usePlaybackStore((s) => s.seekRequestId);
-  const { toggle, setSpeed } = usePlaybackStore.getState();
-
-  // Keep the canvas sized to whatever room the layout gives it, and redraw
-  // whatever the current phase considers "now" whenever it's resized.
-  useEffect(() => {
-    const frame = frameRef.current;
-    const canvas = canvasRef.current;
-    if (!frame || !canvas) return;
-
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const width = Math.max(240, Math.floor(entry.contentRect.width));
-      const height = Math.max(180, Math.floor(entry.contentRect.height));
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
-      const ctx = canvas.getContext('2d');
-      if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      geometryRef.current = computeGeometry(width, height, level.floors, level.carCount);
-
-      if (!ctx) return;
-      if (phase === 'review' && finishedResult) {
-        drawShift(ctx, finishedResult, geometryRef.current, usePlaybackStore.getState().currentTick);
-      } else if (liveSimRef.current) {
-        const walkers = stairwellRef.current.getActiveWalkers(performance.now());
-        drawLiveState(ctx, geometryRef.current, liveSimRef.current.state.building, liveSimRef.current.state.passengers, walkers);
-      } else {
-        drawIdleShaft(ctx, geometryRef.current);
-      }
-    });
-    observer.observe(frame);
-    return () => observer.disconnect();
-  }, [level.floors, level.carCount, phase, finishedResult]);
+  const { toggle, setSpeed, setCurrentTick } = usePlaybackStore.getState();
 
   // The live shift itself: starts as soon as a level is selected (or
   // re-selected via Restart), and keeps running — including through UI
   // edits to the policy elsewhere in the app — until it ends.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!ctx) return;
-
     liveControllerRef.current?.stop();
     liveControllerRef.current = null;
     reviewDriverRef.current?.stop();
     reviewDriverRef.current = null;
-    stairwellRef.current.reset();
+    lastScannedEventIndexRef.current = 0;
+    lastFiredRef.current = null;
 
     const sim = initLiveSim({
       building: {
@@ -148,7 +195,9 @@ export function ElevatorViewport({ level, onShiftEnd, watchedCarId = 0 }: Elevat
     setPhase('live');
     setFinishedResult(null);
     setFinishedStatus(null);
-    setHud(INITIAL_HUD);
+    setLiveTick(0);
+    setLiveMorale(LIVE_MORALE_MAX);
+    setPulsedRuleId(null);
     usePlaybackStore.setState((s) => ({ isPlaying: true, speed: s.speed, currentTick: 0, activeRuleId: null }));
 
     const controller = new LiveRunController({
@@ -164,28 +213,33 @@ export function ElevatorViewport({ level, onShiftEnd, watchedCarId = 0 }: Elevat
           if (history) history[index] = passenger.frustration;
         }
 
-        const walkers = stairwellRef.current.getActiveWalkers(performance.now());
-        drawLiveState(ctx, geometryRef.current, sim.state.building, sim.state.passengers, walkers);
-
-        const watched = frame[watchedCarId];
-        setHud((h) => ({ ...h, tick, floor: watched ? Math.max(0, Math.round(watched.position)) : h.floor }));
-        usePlaybackStore.setState({ currentTick: tick });
-      },
-      onNewEvents: (events) => {
-        stairwellRef.current.addFromEvents(events, performance.now());
-        if (isSoundEnabled()) {
-          for (const event of events) {
-            if (event.type === 'delivered') playDelivered();
-            else if (event.type === 'gave-up') playGaveUp();
+        // stepLiveSim has already appended this tick's events (including
+        // any rule-fired decision) before onFrame runs — scan just the
+        // slice we haven't seen yet rather than waiting for onNewEvents,
+        // which fires after onFrame and would make the pulse a tick stale.
+        const events = sim.state.events;
+        for (let i = lastScannedEventIndexRef.current; i < events.length; i++) {
+          const event = events[i]!;
+          if (event.type === 'rule-fired' && event.carId === watchedCarId) {
+            lastFiredRef.current = { ruleId: event.ruleId ?? '', tick: event.tick };
           }
         }
-        let lastRuleFired: Extract<SimEvent, { type: 'rule-fired' }> | null = null;
-        for (const event of events) {
-          if (event.type === 'rule-fired' && event.carId === watchedCarId) lastRuleFired = event;
-        }
-        if (lastRuleFired) usePlaybackStore.setState({ activeRuleId: lastRuleFired.ruleId });
+        lastScannedEventIndexRef.current = events.length;
+        const fired = lastFiredRef.current;
+        const pulsing = fired && fired.ruleId !== '' && tick - fired.tick < RULE_FIRED_PULSE_TICKS ? fired.ruleId : null;
+        setPulsedRuleId((prev) => (prev === pulsing ? prev : pulsing));
+        if (usePlaybackStore.getState().activeRuleId !== pulsing) usePlaybackStore.setState({ activeRuleId: pulsing });
+
+        setLiveTick(tick);
       },
-      onMoraleChange: (morale) => setHud((h) => ({ ...h, morale })),
+      onNewEvents: (events) => {
+        if (!isSoundEnabled()) return;
+        for (const event of events) {
+          if (event.type === 'delivered') playDelivered();
+          else if (event.type === 'gave-up') playGaveUp();
+        }
+      },
+      onMoraleChange: (morale) => setLiveMorale(morale),
       onStatusChange: (status: LiveRunStatus) => {
         if (status === 'running') return;
         usePlaybackStore.setState({ isPlaying: false });
@@ -204,7 +258,6 @@ export function ElevatorViewport({ level, onShiftEnd, watchedCarId = 0 }: Elevat
     });
 
     liveControllerRef.current = controller;
-    drawLiveState(ctx, geometryRef.current, sim.state.building, sim.state.passengers, []);
     controller.start();
 
     return () => {
@@ -215,22 +268,18 @@ export function ElevatorViewport({ level, onShiftEnd, watchedCarId = 0 }: Elevat
   }, [level.id, restartToken]);
 
   // The review phase: a finished shift, scrubbable via the same
-  // PlaybackDriver the old batch-mode viewport used.
+  // PlaybackDriver the old batch-mode viewport used. Only the transport
+  // clock is driven here — the scene itself is derived from
+  // finishedResult + currentTick directly in render, below.
   useEffect(() => {
     if (phase !== 'review' || !finishedResult) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!ctx) return;
 
     const lastTick = Math.max(0, finishedResult.frames.length - 1);
     usePlaybackStore.setState({ isPlaying: false, currentTick: lastTick, activeRuleId: null });
     reviewEventIndexRef.current = finishedResult.events.length;
     const watchedCarEvents = groupRuleFiredByCar(finishedResult.events).get(watchedCarId);
 
-    function playSoundsUpTo(flooredTick: number): void {
-      // Walking forward from wherever the pointer currently sits — this
-      // only replays sounds during forward playback, never on the initial
-      // jump into review (the pointer starts synced to the end above).
+    function playSoundsAt(flooredTick: number): void {
       while (reviewEventIndexRef.current < finishedResult!.events.length && finishedResult!.events[reviewEventIndexRef.current]!.tick <= flooredTick) {
         const event = finishedResult!.events[reviewEventIndexRef.current]!;
         if (isSoundEnabled()) {
@@ -249,14 +298,10 @@ export function ElevatorViewport({ level, onShiftEnd, watchedCarId = 0 }: Elevat
       getIsPlaying: () => usePlaybackStore.getState().isPlaying,
       getSpeed: () => usePlaybackStore.getState().speed,
       onTick: (tick) => {
-        drawShift(ctx, finishedResult, geometryRef.current, tick);
         usePlaybackStore.setState({ currentTick: tick });
-        playSoundsUpTo(Math.floor(tick));
-
-        const active = activeRuleIdAt(watchedCarEvents, tick);
-        if (active !== usePlaybackStore.getState().activeRuleId) {
-          usePlaybackStore.setState({ activeRuleId: active });
-        }
+        playSoundsAt(Math.floor(tick));
+        const pulsing = ruleFiredPulseAt(watchedCarEvents, tick, RULE_FIRED_PULSE_TICKS);
+        if (usePlaybackStore.getState().activeRuleId !== pulsing) usePlaybackStore.setState({ activeRuleId: pulsing });
       },
       onEnd: () => {
         usePlaybackStore.setState({ isPlaying: false });
@@ -265,7 +310,6 @@ export function ElevatorViewport({ level, onShiftEnd, watchedCarId = 0 }: Elevat
     driver.seek(lastTick);
     reviewDriverRef.current = driver;
     driver.start();
-    drawShift(ctx, finishedResult, geometryRef.current, lastTick);
 
     return () => {
       driver.stop();
@@ -273,127 +317,221 @@ export function ElevatorViewport({ level, onShiftEnd, watchedCarId = 0 }: Elevat
     };
   }, [phase, finishedResult, watchedCarId]);
 
-  function handleScrub(tick: number): void {
-    reviewDriverRef.current?.seek(tick);
-    usePlaybackStore.getState().setCurrentTick(tick);
-    if (finishedResult) {
-      let i = 0;
-      while (i < finishedResult.events.length && finishedResult.events[i]!.tick <= tick) i++;
-      reviewEventIndexRef.current = i;
-    }
-  }
-
-  const isFirstSeekEffect = useRef(true);
-  useEffect(() => {
-    if (isFirstSeekEffect.current) {
-      isFirstSeekEffect.current = false;
-      return;
-    }
-    if (phase !== 'review' || !finishedResult) return;
-    const tick = usePlaybackStore.getState().seekRequestTick;
-    handleScrub(tick);
-    const ctx = canvasRef.current?.getContext('2d');
-    if (ctx) drawShift(ctx, finishedResult, geometryRef.current, tick);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleScrub closes over finishedResult, already a dep
-  }, [seekRequestId]);
-
   function restart(): void {
     setRestartToken((t) => t + 1);
   }
 
+  function handleScrub(tick: number): void {
+    reviewDriverRef.current?.seek(tick);
+    setCurrentTick(tick);
+  }
+
+  // --- Derive the current scene -----------------------------------------
+  // Live: read straight from the mutable LiveSim, which by construction has
+  // already been stepped to `liveTick` by the time this render runs (the
+  // state bump that triggers this render always happens synchronously right
+  // after stepLiveSim mutates it — see onFrame above). Review: interpolate
+  // between the two recorded frames bracketing the (possibly fractional)
+  // scrub position, the same way the old canvas playback did.
+
+  const sim = liveSimRef.current;
+  const displayTick = phase === 'live' ? liveTick : currentTick;
+  let carPoses: CarPose[] = [];
+  let floorScenes = level.floors > 0 ? buildFloorScenes([], level.floors, 0, () => 0) : [];
+
+  if (phase === 'live' && sim) {
+    const passengerById = new Map(sim.state.passengers.map((p) => [p.id, p]));
+    const frustrationAt = (id: number): number => passengerById.get(id)?.frustration ?? 0;
+    floorScenes = buildFloorScenes(sim.state.passengers, level.floors, liveTick, frustrationAt);
+    carPoses = sim.state.building.cars.map((car) => ({
+      id: car.id,
+      position: car.position,
+      doorFraction: liveDoorFraction(car.doorState, car.doorPhaseTicks),
+      riders: ridersOfCar(sim.state.passengers, car.id, liveTick, frustrationAt),
+    }));
+  } else if (phase === 'review' && finishedResult) {
+    const tickA = Math.max(0, Math.min(Math.floor(currentTick), finishedResult.frames.length - 1));
+    const tickB = Math.min(tickA + 1, finishedResult.frames.length - 1);
+    const fraction = currentTick - tickA;
+    const framesA = finishedResult.frames[tickA] ?? [];
+    const framesB = finishedResult.frames[tickB] ?? [];
+    const frustrationAt = (id: number): number => finishedResult.frustrationHistory[id]?.[tickA] ?? 0;
+    floorScenes = buildFloorScenes(finishedResult.passengers, level.floors, tickA, frustrationAt);
+    carPoses = framesA.map((frameA, index) => {
+      const frameB = framesB[index];
+      const position = frameB ? lerp(frameA.position, frameB.position, fraction) : frameA.position;
+      return {
+        id: frameA.carId,
+        position,
+        doorFraction: frameDoorFraction(frameA.doorState),
+        riders: ridersOfCar(finishedResult.passengers, frameA.carId, tickA, frustrationAt),
+      };
+    });
+  }
+
+  const watchedCar = carPoses.find((c) => c.id === watchedCarId) ?? carPoses[0];
+  const floorDisplay = watchedCar ? Math.max(0, Math.round(watchedCar.position)) : 0;
   const isFailed = finishedStatus === 'failed';
   const isSucceeded = finishedStatus === 'succeeded';
-  const displayTick = phase === 'live' ? hud.tick : currentTick;
-  const displayFloor = phase === 'live' ? hud.floor : (finishedResult?.frames[Math.min(Math.floor(currentTick), finishedResult.frames.length - 1)]?.[watchedCarId]?.position ?? 0);
-  const moraleFraction = Math.max(0, Math.min(1, hud.morale / LIVE_MORALE_MAX));
+  const runState = phase === 'review' ? (isFailed ? 'TERMINATED' : 'COMPLETE') : displayTick <= START_LABEL_TICKS ? 'START' : 'IN PROGRESS';
+  const runStateClass =
+    phase === 'review' ? (isFailed ? ' shift-screen__run-state--terminated' : ' shift-screen__run-state--complete') : '';
+  const moraleFraction = Math.max(0, Math.min(1, liveMorale / LIVE_MORALE_MAX));
+  const ruleRows = buildRulePanelRows(policy.rules);
+  const carLanesWidth = level.carCount * CAR_LANE_WIDTH;
+  const scrubMax = finishedResult ? Math.max(0, finishedResult.frames.length - 1) : 0;
 
   return (
-    <div className="viewport">
-      <div className="viewport__toolbar">
-        <button type="button" className="viewport__run-button" onClick={restart}>
-          Restart shift
-        </button>
-        <DotMatrixDisplay value={String(Math.max(0, Math.round(displayFloor))).padStart(2, '0')} label="Current floor" />
-        <DotMatrixDisplay value={formatTick(displayTick)} label="Shift clock" />
-        <button type="button" onClick={toggle} aria-pressed={isPlaying}>
-          {isPlaying ? 'Pause' : phase === 'live' ? 'Resume' : 'Play'}
-        </button>
-        {PLAYBACK_SPEEDS.map((s: PlaybackSpeed) => (
-          <button key={s} type="button" onClick={() => setSpeed(s)} aria-pressed={speed === s}>
-            {s}x
-          </button>
-        ))}
-        <label>
-          <input
-            type="checkbox"
-            checked={soundOn}
-            onChange={(e) => {
-              setSoundEnabled(e.target.checked);
-              setSoundOn(e.target.checked);
-            }}
-          />
-          Sound
-        </label>
+    <div className="shift-screen">
+      <div className="shift-screen__topbar">
+        <div className="shift-screen__title">{level.name.toUpperCase()}</div>
+        <div className="shift-screen__floor-wrap">
+          <DotMatrixDisplay key={floorDisplay} value={String(floorDisplay).padStart(2, '0')} label={`${carLabel(watchedCarId)} · Floor`} />
+          <DotMatrixDisplay value={formatTick(displayTick)} label="Shift clock" />
+        </div>
+        <div className="shift-screen__floor-wrap">
+          <span className={`shift-screen__run-state${runStateClass}`}>{runState}</span>
+          <label>
+            <input
+              type="checkbox"
+              checked={soundOn}
+              onChange={(e) => {
+                setSoundEnabled(e.target.checked);
+                setSoundOn(e.target.checked);
+              }}
+            />
+            Sound
+          </label>
+        </div>
       </div>
 
       {phase === 'live' && (
-        <div className="viewport__morale" role="status" aria-label={`Passenger morale: ${hud.morale} of ${LIVE_MORALE_MAX}`}>
-          <span className="viewport__morale-label">Morale</span>
-          <span className="viewport__morale-track">
+        <div className="shift-screen__morale" role="status" aria-label={`Passenger morale: ${liveMorale} of ${LIVE_MORALE_MAX}`}>
+          <span className="shift-screen__morale-label">Morale</span>
+          <span className="shift-screen__morale-track">
             <span
-              className={`viewport__morale-fill${moraleFraction < 0.35 ? ' viewport__morale-fill--danger' : ''}`}
+              className={`shift-screen__morale-fill${moraleFraction < 0.35 ? ' shift-screen__morale-fill--danger' : ''}`}
               style={{ width: `${moraleFraction * 100}%` }}
             />
           </span>
-          <span className="viewport__morale-value">{hud.morale}</span>
+          <span className="shift-screen__morale-value">{liveMorale}</span>
         </div>
       )}
 
       {phase === 'review' && (isFailed || isSucceeded) && (
-        <p className={`viewport__status ${isFailed ? 'viewport__status--failed' : 'viewport__status--succeeded'}`}>
+        <p className={`shift-screen__status ${isFailed ? 'shift-screen__status--failed' : 'shift-screen__status--succeeded'}`}>
           {isFailed
-            ? 'Service interrupted — morale collapsed and the stairwell took the overflow.'
-            : 'Shift complete. Reviewing the recording below.'}
+            ? 'SERVICE INTERRUPTED — morale collapsed and the stairwell took the overflow.'
+            : 'SHIFT COMPLETE — reviewing the recording below.'}
         </p>
       )}
 
-      <div className="viewport__canvas-frame" ref={frameRef}>
-        <canvas
-          ref={canvasRef}
-          width={FALLBACK_WIDTH}
-          height={FALLBACK_HEIGHT}
+      <div className="shift-screen__body">
+        <div
+          className="shift-screen__shaft"
           role="img"
           aria-label={
             phase === 'live'
-              ? 'Elevator shaft simulation, running live'
-              : isFailed
-                ? 'Elevator shaft, shift terminated — reviewing recording'
-                : 'Elevator shaft, shift complete — reviewing recording'
+              ? `Elevator shaft, running live, car at floor ${floorDisplay}`
+              : `Elevator shaft, ${isFailed ? 'shift terminated' : 'shift complete'} — reviewing recording`
           }
-        />
+        >
+          {floorScenes.map((scene, floor) => (
+            <div className="shift-screen__floor-row" key={floor}>
+              <div className="shift-screen__floor-num">{floor}</div>
+              <div className="shift-screen__floor-track">
+                <div style={{ flexShrink: 0, width: carLanesWidth }} />
+                <div className="shift-screen__call-dial">
+                  {scene.showDial && <PassengerFigure progress={scene.worstProgress} showGauge scale={0.85} />}
+                </div>
+                <div className="shift-screen__wait-area">
+                  {scene.waiting.map((pax) => (
+                    <PassengerFigure key={pax.id} progress={pax.progress} exiting={pax.exiting} showGauge={false} scale={0.75} />
+                  ))}
+                </div>
+                <div className="shift-screen__stairs">STAIRS</div>
+              </div>
+            </div>
+          ))}
+
+          {carPoses.map((car, index) => (
+            <div key={car.id}>
+              {level.carCount > 1 && (
+                <div
+                  className="shift-screen__car-label"
+                  style={{ left: carLeftPx(index), bottom: carBottomPx(car.position) + CAR_HEIGHT + 4 }}
+                >
+                  {carLabel(index)}
+                </div>
+              )}
+              <div
+                className="shift-screen__car"
+                style={{ left: carLeftPx(index), bottom: carBottomPx(car.position), width: CAR_WIDTH, height: CAR_HEIGHT }}
+              >
+                <div className="shift-screen__car-door shift-screen__car-door--left" style={{ transform: `translateX(${-car.doorFraction * 100}%)` }} />
+                <div className="shift-screen__car-door" style={{ transform: `translateX(${car.doorFraction * 100}%)` }} />
+                {car.doorFraction > 0.15 && car.riders.length > 0 && (
+                  <div className="shift-screen__car-riders">
+                    {car.riders.slice(0, 4).map((rider) => (
+                      <PassengerFigure key={rider.id} progress={rider.progress} showGauge={false} scale={0.4} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="shift-screen__rule-panel">
+          <div className="shift-screen__rule-panel-header">POLICY — TOP DOWN</div>
+          {ruleRows.map((rule) => (
+            <div
+              key={rule.ruleId}
+              className={`shift-screen__rule-row${rule.ruleId === pulsedRuleId ? ' shift-screen__rule-row--fired' : ''}${
+                rule.enabled ? '' : ' shift-screen__rule-row--disabled'
+              }`}
+            >
+              <span className="shift-screen__rule-cond">IF {rule.condText.toUpperCase()}</span>
+              <span className="shift-screen__rule-action">{rule.actionText.toUpperCase()}</span>
+            </div>
+          ))}
+          <button type="button" className="shift-screen__add-rule" onClick={onRequestRuleEdit}>
+            + ADD RULE
+          </button>
+          <div className="shift-screen__rule-note">edit in the rules tab — this panel only shows what just fired.</div>
+        </div>
       </div>
 
-      {phase === 'review' && finishedResult ? (
-        <>
-          <label className="viewport__scrub">
-            {formatTick(currentTick)} / {formatTick(finishedResult.frames.length)}
-            <input
-              type="range"
-              min={0}
-              max={Math.max(0, finishedResult.frames.length - 1)}
-              step={1}
-              value={Math.round(currentTick)}
-              onChange={(e) => handleScrub(Number(e.target.value))}
-            />
-          </label>
-          <p>
-            Delivered {finishedResult.score.delivered} / {finishedResult.score.spawned} — gave up {finishedResult.score.gaveUp} — worst wait{' '}
-            {formatTick(finishedResult.score.worstWaitTicks)}
-          </p>
-        </>
-      ) : (
-        <p className="viewport__hint">Shift in progress — edit parameters and rules in the sidebar; changes apply on the next tick.</p>
-      )}
+      <div className="shift-screen__transport">
+        <button type="button" className="shift-screen__play-btn" onClick={toggle} aria-label={isPlaying ? 'Pause' : 'Play'}>
+          {isPlaying ? '⏸' : '▶'}
+        </button>
+        <label className="shift-screen__scrub">
+          <input
+            type="range"
+            min={0}
+            max={scrubMax}
+            step={0.05}
+            value={phase === 'review' ? currentTick : 0}
+            onChange={(e) => handleScrub(Number(e.target.value))}
+            disabled={phase !== 'review'}
+            aria-label="Scrub shift"
+          />
+        </label>
+        <div className="shift-screen__time">
+          {formatTick(displayTick)} / {formatTick(phase === 'review' ? scrubMax : level.durationTicks)}
+        </div>
+        <div className="shift-screen__speed-row">
+          {PLAYBACK_SPEEDS.map((s: PlaybackSpeed) => (
+            <button key={s} type="button" onClick={() => setSpeed(s)} aria-pressed={speed === s}>
+              {s}x
+            </button>
+          ))}
+        </div>
+        <button type="button" onClick={restart}>
+          Restart shift
+        </button>
+      </div>
     </div>
   );
 }

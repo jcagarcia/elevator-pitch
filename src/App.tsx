@@ -91,7 +91,7 @@ export function App(): JSX.Element {
             <h2>{level.name}</h2>
             <p>{level.briefing}</p>
           </article>
-          <ElevatorViewport level={level} onShiftEnd={handleShiftEnd} />
+          <ElevatorViewport level={level} onShiftEnd={handleShiftEnd} onRequestRuleEdit={() => setActiveTab('rules')} />
         </section>
 
         <aside className="sidebar" aria-label="Policy editor">

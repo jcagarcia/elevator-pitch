@@ -44,7 +44,7 @@ npm run lint           # eslint
    below the failure threshold, the shift ends early — "service
    interrupted" — and the stairwell fills with the people you lost.
 4. If the shift instead runs its full duration, it ends successfully and
-   the viewport switches into a review phase: the same canvas, now
+   the viewport switches into a review phase: the same shaft, now
    scrubbable start to finish, with the live "which rule fired" highlight
    in the rule list exact for any point you scrub to (not a guess).
 5. Read the report: composite score, stars, and a ranked list of worst
@@ -81,29 +81,39 @@ src/
              and liveScore.ts's computeLiveMorale — a deliberately
              different, streaming-friendly metric for the live HUD (see
              "Live mode" below for why it isn't the same formula).
-  render/    canvas drawing plus two independent rAF-driven controllers.
+  render/    two independent rAF-driven transport controllers, plus pure
+             scene-derivation helpers — no canvas, the shaft is DOM/CSS.
              playback.ts's PlaybackDriver scrubs an already-computed
              SimResult (review phase, and the old batch flow). liveRun.ts's
              LiveRunController instead steps a live sim forward in real
              time, tick by tick, rebuilding the DispatchStrategy from the
-             current policy before every single tick. stairwellAnimator.ts
-             is a small wall-clock-driven (not sim-tick-driven) tracker for
-             the "walking to the stairs" dots — cosmetic only, never read
-             by the simulation. Nothing here re-renders the simulation
-             through React state per tick.
+             current policy before every single tick. sceneBuilder.ts turns
+             a passenger roster + a tick into per-floor waiting lists and
+             per-car rider lists — a pure function of (passengers, tick,
+             frustrationAt) shared by both the live and review phases, plus
+             frustrationToProgress, the mapping from a passenger's raw
+             frustration number onto PassengerFigure's 0-4 posture scale.
+             ruleHighlight.ts's ruleFiredPulseAt turns the rule-fired event
+             log into a bounded "still inside its ~0.6s pulse window" check
+             (not a persistent "currently active" flag) for the rule panel.
   store/     zustand: current policy draft (editorStore), playback/live-run
-             transport state — play/pause, speed, current tick, active-rule
+             transport state — play/pause, speed, current tick, fired-rule
              highlight (playbackStore, shared by both phases), saved
              policies + level progress persisted to localStorage
              (progressStore).
-  ui/        React. ui/viewport/ElevatorViewport is the main game surface —
-             a responsive canvas (resizes with the window via
-             ResizeObserver) that owns a live/review phase switch: a level
-             starts it running live immediately, and it flips to review
-             once the shift ends (success or failure) so the finished
-             result can be scrubbed. Everything else (parameter panel, rule
-             editor, saved policies, report) lives in a tabbed sidebar next
-             to it, not stacked above/below it.
+  ui/        React. PassengerFigure.tsx is the signature element — see
+             "Design notes" below. ui/viewport/ElevatorViewport is the main
+             game surface: the DOM "Shift Screen" (top bar, shaft, rule
+             panel, transport bar), owning a live/review phase switch — a
+             level starts it running live immediately, and it flips to
+             review once the shift ends (success or failure) so the
+             finished result can be scrubbed. Every tick's scene (car
+             position/doors, per-floor waiting figures, the rule pulse) is
+             derived fresh from the live sim or the finished result via
+             sceneBuilder.ts, not accumulated as extra state. Everything
+             else (parameter panel, rule editor, saved policies, report)
+             lives in a tabbed sidebar next to it, not stacked above/below
+             it.
   audio/     a handful of synthesized tones (Web Audio API, no audio
              files), off by default.
 tests/       mirrors src/. Vitest.
@@ -213,20 +223,52 @@ Vitest, mirroring `src/`. Notably:
   per real second, picks up a policy switch on the very next tick, and
   reports `succeeded`/`failed` at the right moments.
 - `tests/levels/liveScore.test.ts` — the live morale formula in isolation.
-- `tests/render/stairwellAnimator.test.ts` — walker lifecycle (added on
-  gave-up, progresses, pruned once its walk duration elapses).
+- `tests/render/sceneBuilder.test.ts` — frustrationToProgress's band
+  mapping and monotonicity, and buildFloorScenes/ridersOfCar's filtering
+  (excludes riding/delivered/not-yet-spawned passengers, keeps a
+  just-gave-up passenger as a fading "exiting" entry until its grace window
+  elapses, sorts worst-first).
+- `tests/render/ruleHighlight.test.ts` — ruleFiredPulseAt's pulse window:
+  lit while inside it, off once it elapses even with no newer firing, and
+  never lights up for a fall-through (null-ruleId) decision.
 
 ## Design notes
 
-The visual language is a service panel installed sometime in the 90s and
-never replaced: worn brushed metal, riveted panel borders, warning-tag
-amber, monospace throughout. One signature element carries the boldness —
-the dot-matrix floor/clock readout (`src/ui/DotMatrixDisplay.tsx`) — and
-everything else stays quiet on purpose. Copy is written in the voice of a
-maintenance manual: "Run shift," not "Start simulation!"
+The visual language follows the "Elevator frustration gauge" design
+handoff: chunky "juicy" 2D game UI — thick ink outlines, hard offset
+drop-shadows (no blur), punchy flat color, press-down buttons — layered
+over a building-maintenance material world (a worn-beige shaft interior,
+warning orange/yellow, amber LED-style digit readouts). Oswald for
+display/headers, IBM Plex Sans for body, IBM Plex Mono for every data
+readout (timers, rule conditions, the floor digit).
+
+The signature element is `src/ui/PassengerFigure.tsx` — a two-shape
+passenger (circle head, rounded-rect torso, tick-mark foot) whose posture
+is the primary frustration encoding: lean angle, foot-tap tempo, a pacing
+drift, and a breathing "squash," all continuous with how frustrated the
+passenger is. A mounted dial (needle angle plus a crosshatch texture that
+ramps in with frustration) is the colorblind-safe second encoding — angle
+and texture density carry the signal independent of the dial's hue, which
+only shifts along the same ramp for sighted users. Only the worst-off
+waiting passenger on a floor gets a dial, to avoid clutter. The shaft
+itself is plain DOM/CSS (see "Architecture" above) — no canvas — which is
+what makes per-figure continuous animation like this practical: each
+figure owns its own small rAF loop, keyed by passenger id so reordering
+the (worst-first) waiting list never resets one mid-animation.
+
+The Shift Screen is deliberately the loudest part of the app; the sidebar
+(parameter panel, rule editor, saved policies, report) reuses the same
+tokens — panels, buttons, sliders — but stays visually quieter, since it's
+where the player reads and clicks rather than watches. Copy is written in
+the voice of a maintenance manual: "Restart shift," not "Reset simulation!"
 
 Sound is a handful of synthesized tones (no audio files), off by default,
 one checkbox to turn on.
+
+`prefers-reduced-motion` is handled inside PassengerFigure itself: it
+keeps the interpolated pose (lean angle, dial needle angle, dial hue/
+crosshatch — the actual signal) but cuts the continuous tap/pace/squash
+oscillation, which only exists as a peripheral-vision motion-density cue.
 
 ## What's not here yet
 

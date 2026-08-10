@@ -1,28 +1,51 @@
 /*
  * Elevator Pitch — visual design.
  *
- * Direction: a service panel installed in a building sometime in the 90s
- * and never replaced. Worn brushed metal, riveted panel edges, warning-tag
- * amber, everything in a monospace "manual" voice. One signature element —
- * the dot-matrix floor/clock readout (.dot-matrix) — carries all the
- * boldness; every other panel stays deliberately quiet and utilitarian so
- * the instrument reads as an instrument.
+ * Direction (per the "Elevator frustration gauge" design handoff): chunky
+ * "juicy" 2D game UI — thick ink outlines, hard offset drop-shadows (no
+ * blur), punchy flat color, press-down buttons — layered over a
+ * building-maintenance material world (worn beige shaft interior, warning
+ * orange/yellow, amber LED-style readouts). Typography: Oswald for display/
+ * headers, IBM Plex Sans for UI body, IBM Plex Mono for every data readout
+ * (timers, rule conditions, the floor digit). The signature element is the
+ * frustration gauge/passenger figure (src/ui/PassengerFigure.tsx) — needle
+ * angle and a crosshatch texture carry the frustration signal independent
+ * of hue, so it reads at a glance and stays colorblind-safe.
  */
 
 :root {
-  --panel-bg: #3a352e;
-  --panel-bg-recessed: #24211c;
-  --panel-bg-raised: #45402f;
-  --panel-border: #5c554a;
-  --panel-rivet: #726a5a;
-  --text-primary: #ece6d6;
-  --text-muted: #b5ab97;
-  --accent-amber: #e0a83f;
-  --accent-amber-dim: #8a6b28;
-  --accent-danger: #d0473b;
-  --accent-safe: #6a9c5c;
-  --focus-ring: #ffd873;
-  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;
+  --ink: #1c1712;
+  --beige-light: #d8c9a1;
+  --beige-panel: #c4b896;
+  --dark-panel: #2a231a;
+  --dark-panel-2: #3a2f21;
+  --dark-panel-3: #241d15;
+  --dark-well: #141210;
+  --orange: #ff7a1a;
+  --orange-hover: #ff8c3a;
+  --yellow: #ffcf3f;
+  --cream: #f4ecd6;
+  --rust: hsl(5, 78%, 42%);
+  --safe: #5fa350;
+  --muted-on-dark: #a89a76;
+  --muted-on-dark-dim: #6a5c3e;
+  --muted-on-light: #4a4030;
+  --focus-ring: #ffcf3f;
+
+  --font-display: 'Oswald', sans-serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  --shadow-panel: 5px 6px 0 var(--ink);
+  --shadow-panel-lg: 6px 7px 0 var(--ink);
+  --shadow-btn: 3px 4px 0 var(--ink);
+  --shadow-btn-sm: 2px 3px 0 var(--ink);
+
+  --radius-panel: 16px;
+  --radius-card: 14px;
+  --radius-btn: 10px;
+  --border-w: 4px;
+  --border-w-sm: 3px;
   --hit-target: 2.5rem;
 }
 
@@ -36,16 +59,16 @@ html {
 
 body {
   margin: 0;
-  background: var(--panel-bg-recessed);
-  background-image: repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.08) 0px, rgba(0, 0, 0, 0.08) 1px, transparent 1px, transparent 3px);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
+  background: var(--dark-panel);
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-weight: 500;
   font-size: 15px;
   line-height: 1.55;
 }
 
 .app-shell {
-  max-width: 90rem;
+  max-width: 92rem;
   margin: 0 auto;
   padding: 1.25rem 1.25rem 3rem;
   display: flex;
@@ -60,7 +83,8 @@ body {
 }
 
 /* -------------------------------------------------------------------- */
-/* Game layout — the viewport is the hero; the editor lives in a sidebar */
+/* Game layout — the shift screen is the hero; the editor lives in a     */
+/* sidebar                                                               */
 /* -------------------------------------------------------------------- */
 
 .game-layout {
@@ -71,12 +95,6 @@ body {
 }
 
 .viewport-column {
-  /* Overrides the generic section-panel treatment below — this is a plain
-     layout wrapper (briefing card + viewport), not a panel itself. */
-  background: none;
-  border: none;
-  box-shadow: none;
-  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -84,17 +102,17 @@ body {
 }
 
 .viewport-column > article[aria-label='Level briefing'] {
-  padding: 0.55rem 0.85rem;
+  padding: 0.7rem 1rem;
 }
 
 .viewport-column > article[aria-label='Level briefing'] h2 {
   margin-bottom: 0.15rem;
-  font-size: 0.85rem;
+  font-size: 1rem;
 }
 
 .viewport-column > article[aria-label='Level briefing'] p {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
 }
 
 .sidebar {
@@ -108,13 +126,15 @@ body {
 
 .sidebar__policy-name {
   margin: 0 0 0.5rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
   font-size: 0.78rem;
-  color: var(--text-muted);
+  color: var(--muted-on-dark);
 }
 
 .sidebar__tabs {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.35rem;
   margin-bottom: 0.6rem;
   flex-wrap: wrap;
 }
@@ -122,8 +142,8 @@ body {
 .sidebar__tabs button {
   flex: 1 1 auto;
   padding: 0.4rem 0.4rem;
-  font-size: 0.75rem;
-  min-height: 2.1rem;
+  font-size: 0.72rem;
+  min-height: 2.3rem;
 }
 
 .sidebar__content {
@@ -136,88 +156,120 @@ body {
 }
 
 /* -------------------------------------------------------------------- */
-/* Headings — stamped nameplate treatment                               */
+/* Saved policies                                                       */
+/* -------------------------------------------------------------------- */
+
+section[aria-label='Saved policies'] ul {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+section[aria-label='Saved policies'] li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--dark-panel-3);
+  border: var(--border-w-sm) solid var(--ink);
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+}
+
+section[aria-label='Saved policies'] li > :first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------------- */
+/* Headings                                                              */
 /* -------------------------------------------------------------------- */
 
 h1 {
   margin: 0;
-  padding: 0.75rem 1rem;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-left: 6px solid var(--accent-amber);
-  font-size: 1.15rem;
-  letter-spacing: 0.12em;
+  padding: 0.75rem 1.1rem;
+  background: var(--dark-panel-2);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-card);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.2rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 2px 4px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-panel);
 }
 
 h2 {
   margin: 0 0 0.5rem;
-  font-size: 0.95rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent-amber);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+  color: var(--yellow);
 }
 
 h3 {
   margin: 1rem 0 0.4rem;
+  font-family: var(--font-display);
+  font-weight: 700;
   font-size: 0.85rem;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--muted-on-dark);
 }
 
 /* -------------------------------------------------------------------- */
-/* Panels — every section/article/fieldset reads as a riveted enclosure  */
+/* Panels — every section/article a chunky bordered, hard-shadowed card  */
 /* -------------------------------------------------------------------- */
 
 section,
 article {
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 3px;
-  padding: 1rem;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 1px 3px rgba(0, 0, 0, 0.3);
+  background: var(--dark-panel-2);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-panel);
+  padding: 1rem 1.1rem;
+  box-shadow: var(--shadow-panel);
 }
 
 article[aria-label='Level briefing'] {
-  background: #e9e2c9;
-  color: #2b2718;
-  border-color: #b9ad84;
-  font-style: normal;
+  background: var(--cream);
+  color: var(--ink);
+  border-color: var(--ink);
 }
 
 article[aria-label='Level briefing'] h2 {
-  color: #6b4f14;
+  color: #8a5a12;
 }
 
 fieldset {
-  border: 1px solid var(--panel-border);
-  border-radius: 3px;
-  background: var(--panel-bg-recessed);
+  border: var(--border-w-sm) solid var(--ink);
+  border-radius: 12px;
+  background: var(--dark-panel-3);
   margin: 0 0 0.75rem;
   padding: 0.75rem 0.9rem 0.9rem;
-  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 legend {
-  padding: 0.1rem 0.5rem;
-  background: var(--panel-rivet);
-  color: var(--panel-bg-recessed);
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
+  padding: 0.15rem 0.55rem;
+  background: var(--yellow);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  border-radius: 2px;
+  border-radius: 6px;
   font-weight: 700;
+  border: 2px solid var(--ink);
 }
 
 fieldset p {
   margin: 0.4rem 0 0;
-  color: var(--text-muted);
+  color: var(--muted-on-dark);
   font-size: 0.85rem;
 }
 
@@ -231,50 +283,57 @@ nav[aria-label='Level select'] ol {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.45rem;
+}
+
+nav[aria-label='Level select'] button {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
 }
 
 /* -------------------------------------------------------------------- */
-/* Buttons — chunky tactile switches                                    */
+/* Buttons — chunky press-down switches                                 */
 /* -------------------------------------------------------------------- */
 
 button {
-  font-family: inherit;
+  font-family: var(--font-body);
+  font-weight: 600;
   font-size: 0.85rem;
-  color: var(--text-primary);
-  background: var(--panel-bg-raised);
-  border: 1px solid var(--panel-border);
-  border-radius: 3px;
-  padding: 0.45rem 0.75rem;
+  color: var(--cream);
+  background: var(--dark-panel-3);
+  border: var(--border-w-sm) solid var(--ink);
+  border-radius: var(--radius-btn);
+  padding: 0.5rem 0.85rem;
   min-height: var(--hit-target);
   cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 2px 0 rgba(0, 0, 0, 0.35);
-  transition: transform 60ms ease, box-shadow 60ms ease;
+  box-shadow: var(--shadow-btn);
+  transition: transform 80ms, box-shadow 80ms, background 80ms;
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--accent-amber-dim);
+  background: var(--dark-panel-2);
 }
 
 button:active:not(:disabled) {
-  transform: translateY(2px);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+  transform: translate(3px, 4px);
+  box-shadow: 0 0 0 var(--ink);
 }
 
 button:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 button[aria-pressed='true'] {
-  /* Full-strength amber, not the dim variant — dim amber under dark text
-     only reaches ~3.9:1, short of WCAG AA's 4.5:1 for normal-size text. */
-  background: var(--accent-amber);
-  border-color: var(--accent-amber);
-  color: #120d04;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+  background: var(--orange);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+button[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--orange-hover);
 }
 
 /* -------------------------------------------------------------------- */
@@ -283,16 +342,15 @@ button[aria-pressed='true'] {
 
 input[type='checkbox'] {
   appearance: none;
-  width: 2.4rem;
-  height: 1.3rem;
-  background: var(--panel-bg-recessed);
-  border: 1px solid var(--panel-border);
+  width: 2.5rem;
+  height: 1.4rem;
+  background: var(--dark-well);
+  border: 2px solid var(--ink);
   border-radius: 999px;
   position: relative;
   vertical-align: middle;
   margin: 0 0.5rem;
   cursor: pointer;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
   flex-shrink: 0;
 }
 
@@ -304,21 +362,22 @@ input[type='checkbox']::before {
   width: 1.1rem;
   height: 1.1rem;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--muted-on-dark);
   transition: transform 100ms ease, background 100ms ease;
 }
 
 input[type='checkbox']:checked {
-  border-color: var(--accent-amber);
+  border-color: var(--orange);
+  background: var(--dark-panel-3);
 }
 
 input[type='checkbox']:checked::before {
-  transform: translateX(1.05rem);
-  background: var(--accent-amber);
+  transform: translateX(1.1rem);
+  background: var(--orange);
 }
 
 /* -------------------------------------------------------------------- */
-/* Range sliders                                                        */
+/* Range sliders — chunky orange thumb, hard shadow                     */
 /* -------------------------------------------------------------------- */
 
 input[type='range'] {
@@ -332,35 +391,38 @@ input[type='range'] {
 }
 
 input[type='range']::-webkit-slider-runnable-track {
-  height: 4px;
-  background: var(--panel-border);
-  border-radius: 2px;
+  height: 8px;
+  background: var(--muted-on-dark-dim);
+  border: 2px solid var(--ink);
+  border-radius: 4px;
 }
 
 input[type='range']::-moz-range-track {
-  height: 4px;
-  background: var(--panel-border);
-  border-radius: 2px;
+  height: 8px;
+  background: var(--muted-on-dark-dim);
+  border: 2px solid var(--ink);
+  border-radius: 4px;
 }
 
 input[type='range']::-webkit-slider-thumb {
   appearance: none;
-  width: 1.1rem;
-  height: 1.1rem;
-  margin-top: -0.45rem;
-  border-radius: 3px;
-  background: var(--accent-amber);
-  border: 1px solid var(--accent-amber-dim);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-top: -0.55rem;
+  border-radius: 7px;
+  background: var(--orange);
+  border: 3px solid var(--ink);
+  box-shadow: var(--shadow-btn-sm);
   cursor: pointer;
 }
 
 input[type='range']::-moz-range-thumb {
-  width: 1.1rem;
-  height: 1.1rem;
-  border-radius: 3px;
-  background: var(--accent-amber);
-  border: 1px solid var(--accent-amber-dim);
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 7px;
+  background: var(--orange);
+  border: 3px solid var(--ink);
+  box-shadow: var(--shadow-btn-sm);
   cursor: pointer;
 }
 
@@ -371,14 +433,15 @@ input[type='range']::-moz-range-thumb {
 input[type='text'],
 input[type='number'],
 select {
-  font-family: inherit;
+  font-family: var(--font-body);
+  font-weight: 500;
   font-size: 0.85rem;
-  color: var(--text-primary);
-  background: var(--panel-bg-recessed);
-  border: 1px solid var(--panel-border);
-  border-radius: 2px;
-  padding: 0.3rem 0.4rem;
-  min-height: 2rem;
+  color: var(--cream);
+  background: var(--dark-well);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  min-height: 2.1rem;
 }
 
 input[type='number'] {
@@ -393,160 +456,468 @@ label {
 }
 
 /* -------------------------------------------------------------------- */
-/* The signature element: dot-matrix readout                            */
+/* The signature element: amber LED-style digit readout                 */
 /* -------------------------------------------------------------------- */
 
 .dot-matrix {
-  display: inline-block;
-  background: #0c0a06;
-  border: 2px solid #17140d;
-  border-radius: 3px;
-  padding: 0.35rem 0.7rem;
-  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.8);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
 }
 
 .dot-matrix__value {
+  display: inline-block;
+  background: var(--dark-well);
+  border: var(--border-w-sm) solid var(--ink);
+  border-radius: 8px;
+  padding: 0.15rem 0.85rem;
+  min-width: 2.4rem;
+  text-align: center;
+  box-shadow: inset 0 0 8px rgba(255, 207, 63, 0.15), var(--shadow-btn-sm);
   font-family: var(--font-mono);
-  font-size: 1.4rem;
+  font-size: 1.5rem;
   font-weight: 700;
-  letter-spacing: 0.18em;
-  color: var(--accent-amber);
-  text-shadow: 0 0 6px rgba(224, 168, 63, 0.75), 0 0 1px rgba(224, 168, 63, 0.9);
+  letter-spacing: 0.06em;
+  color: var(--yellow);
+  animation: digit-flash 260ms ease-out;
+}
+
+.dot-matrix__label {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-on-dark);
+}
+
+@keyframes digit-flash {
+  0% {
+    color: var(--cream);
+    box-shadow: inset 0 0 14px rgba(255, 207, 63, 0.9), var(--shadow-btn-sm);
+  }
+  100% {
+    color: var(--yellow);
+    box-shadow: inset 0 0 8px rgba(255, 207, 63, 0.15), var(--shadow-btn-sm);
+  }
 }
 
 /* -------------------------------------------------------------------- */
-/* The viewport — the game's main surface                               */
+/* The Shift Screen — the game's main surface                           */
 /* -------------------------------------------------------------------- */
 
-.viewport {
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 3px;
-  padding: 0.85rem;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 1px 3px rgba(0, 0, 0, 0.3);
+.shift-screen {
   display: flex;
   flex-direction: column;
+  gap: 1rem;
+}
+
+.shift-screen__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  background: var(--dark-panel-2);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-card);
+  padding: 0.75rem 1.1rem;
+  box-shadow: var(--shadow-panel);
+}
+
+.shift-screen__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.shift-screen__floor-wrap {
+  display: flex;
+  align-items: center;
   gap: 0.6rem;
 }
 
-.viewport__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.viewport__run-button {
-  background: var(--accent-amber-dim);
-  border-color: var(--accent-amber);
+.shift-screen__run-state {
+  font-family: var(--font-mono);
   font-weight: 700;
-  letter-spacing: 0.03em;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: var(--muted-on-dark);
 }
 
-.viewport__run-button:hover:not(:disabled) {
-  background: var(--accent-amber);
-  color: #120d04;
+.shift-screen__run-state--complete {
+  color: var(--yellow);
 }
 
-.viewport__canvas-frame {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  min-height: 18rem;
-  flex: 1;
+.shift-screen__run-state--terminated {
+  color: var(--rust);
 }
 
-.viewport__canvas-frame canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border: 3px solid var(--panel-rivet);
-  border-radius: 2px;
-  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6);
-}
-
-.viewport__scrub {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  font-size: 0.78rem;
-  width: 100%;
-  margin: 0;
-}
-
-.viewport__scrub input[type='range'] {
-  width: 100%;
-}
-
-.viewport__hint {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  margin: 0;
-}
-
-.viewport__morale {
+.shift-screen__morale {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.78rem;
 }
 
-.viewport__morale-label {
-  color: var(--text-muted);
+.shift-screen__morale-label {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 0.7rem;
+  color: var(--muted-on-dark);
 }
 
-.viewport__morale-track {
-  flex: 1;
-  height: 0.6rem;
-  background: var(--panel-bg-recessed);
-  border: 1px solid var(--panel-border);
-  border-radius: 2px;
+.shift-screen__morale-track {
+  width: 7rem;
+  height: 0.7rem;
+  background: var(--dark-well);
+  border: 2px solid var(--ink);
+  border-radius: 4px;
   overflow: hidden;
 }
 
-.viewport__morale-fill {
+.shift-screen__morale-fill {
   display: block;
   height: 100%;
-  background: var(--accent-safe);
-  transition: width 0.2s linear;
+  background: var(--yellow);
+  transition: width 0.2s linear, background 0.2s linear;
 }
 
-.viewport__morale-fill--danger {
-  background: var(--accent-danger);
+.shift-screen__morale-fill--danger {
+  background: var(--rust);
 }
 
-.viewport__morale-value {
+.shift-screen__morale-value {
   font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.85rem;
   min-width: 2.5em;
   text-align: right;
 }
 
-.viewport__status {
+.shift-screen__status {
   margin: 0;
-  padding: 0.4rem 0.6rem;
-  border-radius: 2px;
+  padding: 0.55rem 0.85rem;
+  border-radius: 10px;
+  border: var(--border-w-sm) solid var(--ink);
+  font-family: var(--font-display);
+  font-weight: 700;
   font-size: 0.85rem;
+  letter-spacing: 0.01em;
+  box-shadow: var(--shadow-btn);
+}
+
+.shift-screen__status--failed {
+  background: var(--rust);
+  color: var(--cream);
+}
+
+.shift-screen__status--succeeded {
+  background: var(--safe);
+  color: var(--ink);
+}
+
+.shift-screen__body {
+  display: flex;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.shift-screen__shaft {
+  flex: 1 1 0;
+  /* Without this, a column flex-direction (see the narrow-viewport media
+     query below, where .shift-screen__body stacks shaft-then-rule-panel
+     vertically) leaves the shaft with no definite cross size to grow into,
+     and it collapses toward zero height instead of showing its content. */
+  min-height: 24rem;
+  background: var(--beige-panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-panel);
+  padding: 0.9rem 1.1rem;
+  display: flex;
+  flex-direction: column-reverse;
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-shadow: var(--shadow-panel-lg);
+}
+
+.shift-screen__floor-row {
+  display: flex;
+  align-items: center;
+  height: 3.6rem;
+  flex: 0 0 auto;
+  gap: 0.7rem;
+}
+
+.shift-screen__floor-num {
+  width: 1.8rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--ink);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.shift-screen__floor-track {
+  flex: 1;
+  height: 82%;
+  border-top: 3px dashed var(--ink);
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  padding-bottom: 0.25rem;
+  min-width: 0;
+}
+
+.shift-screen__call-dial {
+  width: 3.6rem;
+  display: flex;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.shift-screen__wait-area {
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-end;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.shift-screen__stairs {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.6rem;
+  color: #8a7a54;
+  letter-spacing: 0.05em;
+  align-self: flex-end;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.shift-screen__car-rail {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.shift-screen__car {
+  position: absolute;
+  background: var(--orange);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 8px;
+  display: flex;
+  box-shadow: var(--shadow-btn);
+  overflow: hidden;
+  transition: bottom 0ms;
+}
+
+.shift-screen__car-label {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.6rem;
+  color: var(--muted-on-light);
+  letter-spacing: 0.05em;
+}
+
+.shift-screen__car-door {
+  flex: 1;
+  background: var(--dark-panel-2);
+}
+
+.shift-screen__car-door--left {
+  border-right: 2px solid var(--ink);
+}
+
+.shift-screen__car-riders {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  pointer-events: none;
+}
+
+.shift-screen__rule-panel {
+  width: 19rem;
+  flex-shrink: 0;
+  background: var(--dark-panel-3);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-panel);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-panel-lg);
+  overflow-y: auto;
+}
+
+.shift-screen__rule-panel-header {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  color: var(--muted-on-dark);
+  margin-bottom: 0.6rem;
+}
+
+.shift-screen__rule-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.65rem 0.7rem;
+  margin-bottom: 0.5rem;
+  background: var(--dark-panel-2);
+  border: var(--border-w-sm) solid var(--ink);
+  border-radius: 10px;
+  transform: scale(1);
+  transition: background 200ms ease-out, transform 200ms ease-out, box-shadow 200ms ease-out;
+}
+
+.shift-screen__rule-row--fired {
+  background: var(--yellow);
+  box-shadow: var(--shadow-btn-sm);
+  transform: scale(1.03);
+}
+
+.shift-screen__rule-row--disabled {
+  opacity: 0.5;
+}
+
+.shift-screen__rule-cond {
+  font-family: var(--font-mono);
   font-weight: 600;
+  font-size: 0.7rem;
+  color: var(--muted-on-dark);
 }
 
-.viewport__status--failed {
-  background: rgba(208, 71, 59, 0.18);
-  border: 1px solid var(--accent-danger);
-  color: #f3b8b1;
+.shift-screen__rule-row--fired .shift-screen__rule-cond {
+  color: var(--dark-panel-2);
 }
 
-.viewport__status--succeeded {
-  background: rgba(106, 156, 92, 0.18);
-  border: 1px solid var(--accent-safe);
-  color: #cfe8c4;
+.shift-screen__rule-action {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: var(--cream);
+}
+
+.shift-screen__rule-row--fired .shift-screen__rule-action {
+  color: var(--ink);
+}
+
+.shift-screen__add-rule {
+  margin-top: 0.2rem;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.7rem;
+  padding: 0.6rem 0;
+  background: transparent;
+  border: 3px dashed var(--muted-on-dark-dim);
+  color: var(--muted-on-dark);
+  box-shadow: none;
+}
+
+.shift-screen__add-rule:hover:not(:disabled) {
+  background: var(--dark-panel-2);
+}
+
+.shift-screen__add-rule:active:not(:disabled) {
+  transform: none;
+}
+
+.shift-screen__rule-note {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.62rem;
+  color: var(--muted-on-dark-dim);
+  margin-top: 0.6rem;
+  line-height: 1.4;
+}
+
+.shift-screen__transport {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--dark-panel-2);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius-card);
+  padding: 0.75rem 1.1rem;
+  box-shadow: var(--shadow-panel);
+  flex-wrap: wrap;
+}
+
+.shift-screen__play-btn {
+  width: 2.9rem;
+  height: 2.9rem;
+  min-height: 0;
+  font-size: 1.05rem;
+  background: var(--orange);
+  color: var(--ink);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.shift-screen__play-btn:hover:not(:disabled) {
+  background: var(--orange-hover);
+}
+
+.shift-screen__scrub {
+  flex: 1;
+  min-width: 8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+}
+
+.shift-screen__scrub input[type='range'] {
+  width: 100%;
+}
+
+.shift-screen__scrub input[type='range']::-webkit-slider-runnable-track {
+  background: var(--muted-on-dark-dim);
+}
+
+.shift-screen__time {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--muted-on-dark);
+  white-space: nowrap;
+}
+
+.shift-screen__speed-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.shift-screen__speed-row button {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.72rem;
+  padding: 0.5rem 0.65rem;
+  min-height: 0;
+}
+
+.shift-screen__hint {
+  color: var(--muted-on-dark);
+  font-size: 0.85rem;
+  margin: 0;
 }
 
 /* -------------------------------------------------------------------- */
-/* Rule editor — live-fired rule reads as a lit indicator                */
+/* Rule editor (full editor, in the sidebar) — fired rule reads as a lit */
+/* indicator, same visual language as the shift screen's mini panel      */
 /* -------------------------------------------------------------------- */
 
 section[aria-label='Dispatch rules'] > ol {
@@ -559,20 +930,24 @@ section[aria-label='Dispatch rules'] > ol {
 }
 
 section[aria-label='Dispatch rules'] > ol > li {
-  border: 1px solid var(--panel-border);
-  border-radius: 3px;
-  padding: 0.6rem 0.75rem;
-  background: var(--panel-bg-recessed);
+  border: var(--border-w-sm) solid var(--ink);
+  border-radius: 12px;
+  padding: 0.65rem 0.8rem;
+  background: var(--dark-panel-3);
 }
 
 section[aria-label='Dispatch rules'] > ol > li[data-active='true'] {
-  border-color: var(--accent-amber);
-  background: #2c2410;
-  box-shadow: 0 0 10px rgba(224, 168, 63, 0.35), inset 0 0 8px rgba(224, 168, 63, 0.15);
+  background: var(--yellow);
+  color: var(--ink);
+  box-shadow: var(--shadow-btn-sm);
+}
+
+section[aria-label='Dispatch rules'] > ol > li[data-active='true'] p {
+  color: var(--dark-panel-2);
 }
 
 section[aria-label='Dispatch rules'] [data-drag-over='true'] {
-  outline: 2px dashed var(--accent-amber);
+  outline: 3px dashed var(--yellow);
   outline-offset: 2px;
 }
 
@@ -586,7 +961,7 @@ section[aria-label='Dispatch rules'] ol ol {
 }
 
 section[aria-label='Dispatch rules'] p {
-  color: var(--text-muted);
+  color: var(--muted-on-dark);
   font-size: 0.85rem;
   margin: 0.5rem 0 0;
 }
@@ -606,7 +981,7 @@ section[aria-label='End-of-shift report'] ol li {
 section[aria-label='End-of-shift report'] ol button {
   text-align: left;
   width: 100%;
-  background: var(--panel-bg-recessed);
+  background: var(--dark-panel-3);
 }
 
 /* -------------------------------------------------------------------- */
@@ -623,9 +998,13 @@ section[aria-label='End-of-shift report'] ol button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
+  .dot-matrix__value {
+    animation: none;
+  }
+
+  button,
+  input[type='checkbox']::before {
     transition: none !important;
-    animation: none !important;
   }
 }
 
@@ -647,6 +1026,15 @@ section[aria-label='End-of-shift report'] ol button {
   .sidebar__content {
     overflow-y: visible;
   }
+
+  .shift-screen__body {
+    flex-direction: column;
+  }
+
+  .shift-screen__rule-panel {
+    width: auto;
+    max-height: 16rem;
+  }
 }
 
 @media (max-width: 48rem) {
@@ -658,14 +1046,23 @@ section[aria-label='End-of-shift report'] ol button {
     font-size: 1rem;
   }
 
-  .viewport__toolbar {
+  .shift-screen__topbar {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .viewport__canvas-frame {
-    aspect-ratio: 3 / 4;
-    min-height: 22rem;
+  .shift-screen__transport {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .shift-screen__scrub {
+    order: 2;
+  }
+
+  .shift-screen__speed-row {
+    order: 3;
+    justify-content: center;
   }
 
   section[aria-label='Dispatch rules'] > ol > li {
