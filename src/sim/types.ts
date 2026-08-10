@@ -105,6 +105,10 @@ export interface Car {
 export interface Building {
   readonly floors: number;
   readonly cars: readonly Car[];
+  /** Floors whose hall call button is unreliable — see config.ts's
+   *  FAULTY_SENSOR_* constants and policy/ruleEngine.ts. Empty on every
+   *  level except the one built to teach the timeout-rule workaround. */
+  readonly faultyHallSensorFloors: readonly number[];
 }
 
 /** A hall call: someone waiting at a floor wanting to go a given direction. */

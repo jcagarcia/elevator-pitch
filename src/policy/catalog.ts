@@ -78,7 +78,12 @@ function sweepTarget(ctx: DispatchContext, direction: Direction): number | null 
   if (direction === 'idle') return null;
   const destinations = onboardDestinations(ctx);
   const candidates = [
-    ...ctx.hallCalls.filter((c) => isAhead(c.floor, ctx.car.position, direction)).map((c) => c.floor),
+    // Match the call's own direction, not just position — hallCalls isn't
+    // guaranteed to be pre-filtered to this direction (an empty car sees
+    // every direction; see ruleEngine's directionIsProtected), so without
+    // this an opposite-direction call at a positionally-ahead floor could
+    // get swept up as if it belonged to this direction.
+    ...ctx.hallCalls.filter((c) => c.direction === direction && isAhead(c.floor, ctx.car.position, direction)).map((c) => c.floor),
     ...destinations.filter((floor) => isAhead(floor, ctx.car.position, direction)),
   ];
   if (candidates.length > 0) {
@@ -103,6 +108,14 @@ export const CONDITIONS: Record<ConditionId, ConditionDef> = {
     defaultParams: {},
     evaluate: (ctx) => ({ matched: ctx.car.passengers.length === 0 }),
     describe: () => 'the car is empty',
+  },
+
+  'direction-uncommitted': {
+    id: 'direction-uncommitted',
+    label: 'No direction committed yet',
+    defaultParams: {},
+    evaluate: (ctx) => ({ matched: ctx.car.committedDirection === 'idle' }),
+    describe: () => 'the car has no direction committed yet',
   },
 
   'has-waiting-call': {
@@ -143,7 +156,10 @@ export const CONDITIONS: Record<ConditionId, ConditionDef> = {
       const seconds = typeof params.seconds === 'number' ? params.seconds : 0;
       const thresholdTicks = seconds * TICK_RATE;
       let oldest: FocusCall | null = null;
-      for (const call of ctx.hallCalls) {
+      // Deliberately reads allHallCalls, not hallCalls — this condition's
+      // whole purpose is to override lookahead/direction/faulty-sensor
+      // filtering once a call has waited too long.
+      for (const call of ctx.allHallCalls) {
         if (ctx.state.tick - call.oldestSpawnTick < thresholdTicks) continue;
         if (!oldest || call.oldestSpawnTick < oldest.oldestSpawnTick) oldest = call;
       }

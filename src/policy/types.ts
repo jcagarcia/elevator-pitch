@@ -8,6 +8,7 @@ import type { Building, Car, Direction, SimState } from '../sim/types';
 export type ConditionId =
   | 'always'
   | 'car-empty'
+  | 'direction-uncommitted'
   | 'has-waiting-call'
   | 'traveling-direction'
   | 'capacity-at-least'
@@ -91,9 +92,18 @@ export interface DispatchContext {
   readonly building: Building;
   readonly policy: DispatchPolicy;
   /** Hall calls visible to this car for this decision — already filtered by
-   *  lookaheadFloors, acceptReverseDirectionPickup, and calls claimed by a
-   *  different car. */
+   *  lookaheadFloors, acceptReverseDirectionPickup, a faulty sensor's duty
+   *  cycle, and calls claimed by a different car. This is what almost every
+   *  condition and action should read. */
   readonly hallCalls: readonly FocusCall[];
+  /**
+   * Every waiting call, bypassing every soft filter above (lookahead,
+   * direction preference, faulty sensor) except the two-car claim — used
+   * only by 'call-waited-longer-than', which exists specifically to let a
+   * rule override those filters once a call has waited too long. Reading
+   * this from anywhere else defeats the point of the filters.
+   */
+  readonly allHallCalls: readonly FocusCall[];
 }
 
 export type ConditionResult = { matched: false } | { matched: true; focus?: FocusCall };

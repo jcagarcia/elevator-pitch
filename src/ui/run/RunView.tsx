@@ -33,6 +33,7 @@ export function RunView({ result, floors, carCount, watchedCarId = 0 }: RunViewP
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const speed = usePlaybackStore((s) => s.speed);
   const currentTick = usePlaybackStore((s) => s.currentTick);
+  const seekRequestId = usePlaybackStore((s) => s.seekRequestId);
   const { toggle, setSpeed, setCurrentTick } = usePlaybackStore.getState();
 
   useEffect(() => {
@@ -73,6 +74,23 @@ export function RunView({ result, floors, carCount, watchedCarId = 0 }: RunViewP
     driverRef.current?.seek(tick);
     setCurrentTick(tick);
   }
+
+  // Requests to jump the playhead from outside this component (the "worst
+  // moments" list in the report). Skipped on mount (id starts at 0) so this
+  // doesn't fire for a stale request left over from a previous run.
+  const isFirstSeekEffect = useRef(true);
+  useEffect(() => {
+    if (isFirstSeekEffect.current) {
+      isFirstSeekEffect.current = false;
+      return;
+    }
+    const tick = usePlaybackStore.getState().seekRequestTick;
+    driverRef.current?.seek(tick);
+    setCurrentTick(tick);
+    const ctx = canvasRef.current?.getContext('2d');
+    if (ctx) drawShift(ctx, result, geometry, tick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setCurrentTick is a stable zustand action reference
+  }, [seekRequestId, result, geometry]);
 
   return (
     <section aria-label="Shift playback">

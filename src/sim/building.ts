@@ -6,6 +6,8 @@ export interface BuildingSpec {
   capacityPerCar: number;
   /** Floor each car starts parked at. Defaults to ground (0). */
   startFloor?: number;
+  /** See Building.faultyHallSensorFloors. Defaults to none. */
+  faultyHallSensorFloors?: readonly number[];
 }
 
 export function createBuilding(spec: BuildingSpec): Building {
@@ -27,5 +29,5 @@ export function createBuilding(spec: BuildingSpec): Building {
       targetFloor: null,
     });
   }
-  return { floors: spec.floors, cars };
+  return { floors: spec.floors, cars, faultyHallSensorFloors: spec.faultyHallSensorFloors ?? [] };
 }

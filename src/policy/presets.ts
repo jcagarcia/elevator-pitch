@@ -49,7 +49,7 @@ export const SCAN_PRESET: DispatchPolicy = {
     idleParkingFloor: null,
   },
   rules: [
-    rule('scan-start', [{ id: 'car-empty', params: {} }, { id: 'has-waiting-call', params: {} }], {
+    rule('scan-start', [{ id: 'direction-uncommitted', params: {} }, { id: 'has-waiting-call', params: {} }], {
       id: 'go-to-nearest-call',
       params: {},
     }),
@@ -73,7 +73,7 @@ export const LOOK_PRESET: DispatchPolicy = {
     idleParkingFloor: null,
   },
   rules: [
-    rule('look-start', [{ id: 'car-empty', params: {} }, { id: 'has-waiting-call', params: {} }], {
+    rule('look-start', [{ id: 'direction-uncommitted', params: {} }, { id: 'has-waiting-call', params: {} }], {
       id: 'go-to-nearest-call',
       params: {},
     }),

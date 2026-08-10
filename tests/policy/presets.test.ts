@@ -4,51 +4,7 @@ import { LOOK_PRESET, NAIVE_FCFS_PRESET, SCAN_PRESET } from '../../src/policy/pr
 import { naiveFcfsDispatch } from '../../src/sim/dispatch';
 import { TICK_RATE } from '../../src/sim/config';
 import { runShift, type ShiftConfig } from '../../src/sim/simulate';
-import { emptyFrustrationBySource, type Car, type Passenger, type SimState } from '../../src/sim/types';
-
-function makeCar(overrides: Partial<Car> = {}): Car {
-  return {
-    id: 0,
-    capacity: 8,
-    position: 5,
-    velocity: 0,
-    direction: 'idle',
-    committedDirection: 'idle',
-    doorState: 'closed',
-    doorPhaseTicks: 0,
-    doorOpenElapsedTicks: 0,
-    requiredDwellTicks: 0,
-    passengers: [],
-    targetFloor: null,
-    ...overrides,
-  };
-}
-
-function makePassenger(overrides: Partial<Passenger> & Pick<Passenger, 'id' | 'originFloor' | 'destFloor'>): Passenger {
-  return {
-    spawnTick: 0,
-    traits: [],
-    state: 'waiting',
-    frustration: 0,
-    frustrationBySource: emptyFrustrationBySource(),
-    carId: null,
-    boardedTick: null,
-    deliveredTick: null,
-    gaveUpTick: null,
-    stalledTicks: 0,
-    ...overrides,
-  };
-}
-
-function makeState(cars: Car[], passengers: Passenger[], tick = 0): SimState {
-  return {
-    tick,
-    building: { floors: 10, cars },
-    passengers,
-    events: [],
-    claimedCalls: new Map(),
-  };
-}
+import { makeCar, makePassenger, makeState } from './fixtures';
 
 describe('SCAN vs LOOK reversal behavior', () => {
   it('SCAN keeps riding to the terminal even with nothing ahead, as long as something needs service elsewhere', () => {
@@ -78,13 +34,45 @@ describe('SCAN vs LOOK reversal behavior', () => {
   });
 
   it('SCAN only reverses once it physically reaches the terminal', () => {
+    // Car carrying a rider (so car-empty doesn't fire first and go straight
+    // to the opposite-direction call below — direction protection only
+    // applies while someone's actually aboard to protect from a detour).
+    const car = makeCar({ position: 9, committedDirection: 'up', passengers: [1] });
+    const rider = makePassenger({ id: 1, originFloor: 9, destFloor: 9, state: 'riding', carId: 0 });
+    const waitingDown = makePassenger({ id: 0, originFloor: 2, destFloor: 0 });
+    const state = makeState([car], [rider, waitingDown]);
+
+    const decision = createPolicyDispatch(SCAN_PRESET).decideNextTarget(car, state);
+
+    expect(decision.ruleId).toBe('scan-reverse-at-end');
+  });
+
+  it('an empty car that still has a committed direction keeps sweeping instead of restarting greedily', () => {
+    // Same setup as above, minus the rider — the car is empty, but its
+    // direction commitment from the trip that just ended is still 'up'.
+    // Bootstrapping onto the nearest call here (a 'down' call at floor 2)
+    // would break SCAN's guarantee of finishing a full sweep before
+    // reversing — that's exactly the starvation bug this rule exists to
+    // avoid (confirmed empirically: it reduced a level's delivery rate from
+    // 46/57 to 3/57 before the fix).
     const car = makeCar({ position: 9, committedDirection: 'up' });
+    const waitingDown = makePassenger({ id: 0, originFloor: 2, destFloor: 0 });
+    const state = makeState([car], [waitingDown]);
+
+    const decision = createPolicyDispatch(SCAN_PRESET).decideNextTarget(car, state);
+
+    expect(decision.ruleId).toBe('scan-reverse-at-end');
+  });
+
+  it('a car with no direction committed yet goes straight to the nearest call', () => {
+    const car = makeCar({ position: 9, committedDirection: 'idle' });
     const passenger = makePassenger({ id: 0, originFloor: 2, destFloor: 0 });
     const state = makeState([car], [passenger]);
 
     const decision = createPolicyDispatch(SCAN_PRESET).decideNextTarget(car, state);
 
-    expect(decision.ruleId).toBe('scan-reverse-at-end');
+    expect(decision.targetFloor).toBe(2);
+    expect(decision.ruleId).toBe('scan-start');
   });
 });
 

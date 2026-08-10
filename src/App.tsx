@@ -1,51 +1,84 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { cumulativeUnlocksThrough, getLevel, LEVELS } from './levels';
+import { runLevel } from './levels/runLevel';
+import { computeCompositeScore, computeStars, type StarRating } from './levels/scoring';
 import { createPolicyDispatch } from './policy/ruleEngine';
-import { TICK_RATE } from './sim/config';
-import type { BuildingSpec } from './sim/building';
-import { runShift, type SimResult } from './sim/simulate';
-import type { PassengerGenSpec } from './sim/passengerGenerator';
+import type { SimResult } from './sim/simulate';
 import { useEditorStore } from './store/editorStore';
+import { useProgressStore } from './store/progressStore';
 import { ParameterPanel } from './ui/editor/ParameterPanel';
 import { RuleEditor } from './ui/editor/RuleEditor';
+import { SavedPolicies } from './ui/editor/SavedPolicies';
+import { ShiftReport } from './ui/report/ShiftReport';
 import { RunView } from './ui/run/RunView';
 
-const DEMO_BUILDING: BuildingSpec = { floors: 10, carCount: 1, capacityPerCar: 8 };
-const DEMO_SEED = 42;
-const DEMO_DURATION_TICKS = 5 * 60 * TICK_RATE;
-const DEMO_PASSENGER_SPEC: PassengerGenSpec = {
-  meanArrivalsPerMinute: 6,
-  originFloorWeights: [10, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  destinationBias: 'up',
-  traitChances: { impatient: 0.15, heavy: 0.05, vip: 0.03, luggage: 0.05 },
-};
+function starGlyphs(stars: StarRating): string {
+  return '★★★☆☆☆'.slice(3 - stars, 6 - stars);
+}
 
 export function App(): JSX.Element {
+  const [selectedLevelId, setSelectedLevelId] = useState(LEVELS[0]!.id);
   const [result, setResult] = useState<SimResult | null>(null);
   const policyName = useEditorStore((s) => s.policy.name);
+  const levelProgress = useProgressStore((s) => s.levelProgress);
+
+  const level = getLevel(selectedLevelId) ?? LEVELS[0]!;
+  const unlocks = useMemo(() => cumulativeUnlocksThrough(selectedLevelId), [selectedLevelId]);
+
+  function selectLevel(levelId: string): void {
+    setSelectedLevelId(levelId);
+    setResult(null);
+  }
 
   function runShiftWithCurrentPolicy(): void {
     const policy = useEditorStore.getState().policy;
-    setResult(
-      runShift({
-        building: DEMO_BUILDING,
-        seed: DEMO_SEED,
-        durationTicks: DEMO_DURATION_TICKS,
-        passengerGenSpec: DEMO_PASSENGER_SPEC,
-        dispatch: createPolicyDispatch(policy),
-      }),
-    );
+    const shiftResult = runLevel(level, createPolicyDispatch(policy));
+    setResult(shiftResult);
+
+    const composite = computeCompositeScore(shiftResult.score);
+    const stars = computeStars(composite, level.starThresholds);
+    useProgressStore.getState().recordLevelResult(level.id, stars, composite);
   }
 
   return (
     <main>
       <h1>Elevator Pitch</h1>
-      <p>Service panel under construction. Dispatch policy: {policyName} (demo, seed {DEMO_SEED}).</p>
-      <ParameterPanel floors={DEMO_BUILDING.floors} />
-      <RuleEditor />
+
+      <nav aria-label="Level select">
+        <h2>Levels</h2>
+        <ol>
+          {LEVELS.map((l) => {
+            const progress = levelProgress[l.id];
+            return (
+              <li key={l.id}>
+                <button type="button" onClick={() => selectLevel(l.id)} aria-pressed={l.id === selectedLevelId}>
+                  {l.name} {progress ? starGlyphs(progress.stars) : ''}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
+
+      <article aria-label="Level briefing">
+        <h2>{level.name}</h2>
+        <p>{level.briefing}</p>
+      </article>
+
+      <p>Dispatch policy: {policyName}</p>
+      <ParameterPanel floors={level.floors} />
+      <RuleEditor unlockedConditions={unlocks.conditions} unlockedActions={unlocks.actions} />
+      <SavedPolicies />
       <button type="button" onClick={runShiftWithCurrentPolicy}>
         Run shift
       </button>
-      {result && <RunView result={result} floors={DEMO_BUILDING.floors} carCount={DEMO_BUILDING.carCount} />}
+
+      {result && (
+        <>
+          <RunView result={result} floors={level.floors} carCount={level.carCount} />
+          <ShiftReport result={result} starThresholds={level.starThresholds} />
+        </>
+      )}
     </main>
   );
 }

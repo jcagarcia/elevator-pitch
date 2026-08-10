@@ -17,6 +17,19 @@ export interface PassengerGenSpec {
   /** Independent per-passenger probability of rolling each trait. Traits
    *  are not mutually exclusive. */
   traitChances?: Partial<Record<Trait, number>>;
+  /** Guaranteed passengers layered on top of the probabilistic generator —
+   *  for level "story beats" that can't be left to chance, like the one VIP
+   *  who has to actually show up. Merged into the roster in spawn-tick
+   *  order and IDs are reassigned afterward, so they interleave naturally
+   *  with everyone else rather than always arriving first or last. */
+  forcedPassengers?: readonly ForcedPassengerSpec[];
+}
+
+export interface ForcedPassengerSpec {
+  spawnTick: number;
+  originFloor: number;
+  destFloor: number;
+  traits?: readonly Trait[];
 }
 
 /** Deterministically generates the full passenger roster for a shift from a
@@ -37,9 +50,15 @@ export function generatePassengers(
   const bias = spec.destinationBias ?? 'none';
   const traitChances = spec.traitChances ?? {};
 
-  const passengers: Passenger[] = [];
+  interface Seed {
+    spawnTick: number;
+    originFloor: number;
+    destFloor: number;
+    traits: readonly Trait[];
+  }
+
+  const seeds: Seed[] = [];
   let clock = 0;
-  let nextId = 0;
 
   for (;;) {
     clock += exponentialSample(rng, meanRatePerTick);
@@ -49,25 +68,35 @@ export function generatePassengers(
     const originFloor = weightedIndex(rng, originWeights);
     const destFloor = pickDestination(rng, originFloor, floors, bias);
     const traits = ALL_TRAITS.filter((trait) => chance(rng, traitChances[trait] ?? 0));
+    seeds.push({ spawnTick, originFloor, destFloor, traits });
+  }
 
-    passengers.push({
-      id: nextId++,
-      originFloor,
-      destFloor,
-      spawnTick,
-      traits,
-      state: 'waiting',
-      frustration: 0,
-      frustrationBySource: emptyFrustrationBySource(),
-      carId: null,
-      boardedTick: null,
-      deliveredTick: null,
-      gaveUpTick: null,
-      stalledTicks: 0,
+  for (const forced of spec.forcedPassengers ?? []) {
+    seeds.push({
+      spawnTick: forced.spawnTick,
+      originFloor: forced.originFloor,
+      destFloor: forced.destFloor,
+      traits: forced.traits ?? [],
     });
   }
 
-  return passengers;
+  seeds.sort((a, b) => a.spawnTick - b.spawnTick);
+
+  return seeds.map((seed, id) => ({
+    id,
+    originFloor: seed.originFloor,
+    destFloor: seed.destFloor,
+    spawnTick: seed.spawnTick,
+    traits: seed.traits,
+    state: 'waiting',
+    frustration: 0,
+    frustrationBySource: emptyFrustrationBySource(),
+    carId: null,
+    boardedTick: null,
+    deliveredTick: null,
+    gaveUpTick: null,
+    stalledTicks: 0,
+  }));
 }
 
 function pickDestination(rng: Rng, originFloor: number, floors: number, bias: 'up' | 'down' | 'none'): number {

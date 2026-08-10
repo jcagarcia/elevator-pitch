@@ -4,8 +4,18 @@ import type { ActionId, Condition, ConditionId, Rule } from '../../policy/types'
 import { useEditorStore } from '../../store/editorStore';
 import { usePlaybackStore } from '../../store/playbackStore';
 
-const CONDITION_IDS = Object.keys(CONDITIONS) as ConditionId[];
-const ACTION_IDS = Object.keys(ACTIONS) as ActionId[];
+const ALL_CONDITION_IDS = Object.keys(CONDITIONS) as ConditionId[];
+const ALL_ACTION_IDS = Object.keys(ACTIONS) as ActionId[];
+
+/** The dropdown always includes the currently-selected value even if it
+ *  isn't unlocked yet — a preset can reference catalog entries ahead of
+ *  what the level has unlocked, and hiding the option would make the
+ *  select show nothing for it. */
+function selectableIds<T extends string>(all: readonly T[], unlocked: readonly T[], current: T): T[] {
+  const set = new Set(unlocked);
+  set.add(current);
+  return all.filter((id) => set.has(id));
+}
 
 function describeRule(rule: Rule): string {
   const conditions = rule.conditions.map((c) => CONDITIONS[c.id].describe(c.params)).join(' and ');
@@ -46,14 +56,16 @@ interface ConditionRowProps {
   rule: Rule;
   condition: Condition;
   index: number;
+  unlockedConditions: readonly ConditionId[];
 }
 
-function ConditionRow({ rule, condition, index }: ConditionRowProps): JSX.Element {
+function ConditionRow({ rule, condition, index, unlockedConditions }: ConditionRowProps): JSX.Element {
   const { setConditionId, setConditionParam, removeCondition } = useEditorStore.getState();
+  const options = selectableIds(ALL_CONDITION_IDS, unlockedConditions, condition.id);
   return (
     <li>
       <select value={condition.id} onChange={(e) => setConditionId(rule.id, index, e.target.value as ConditionId)}>
-        {CONDITION_IDS.map((id) => (
+        {options.map((id) => (
           <option key={id} value={id}>
             {CONDITIONS[id].label}
           </option>
@@ -78,10 +90,26 @@ interface RuleRowProps {
   onMove: (from: number, to: number) => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
+  unlockedConditions: readonly ConditionId[];
+  unlockedActions: readonly ActionId[];
 }
 
-function RuleRow({ rule, index, isActive, isDragOver, onDragStart, onDragOver, onDrop, onMove, canMoveUp, canMoveDown }: RuleRowProps): JSX.Element {
+function RuleRow({
+  rule,
+  index,
+  isActive,
+  isDragOver,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onMove,
+  canMoveUp,
+  canMoveDown,
+  unlockedConditions,
+  unlockedActions,
+}: RuleRowProps): JSX.Element {
   const { toggleRule, removeRule, addCondition, setActionId, setActionParam } = useEditorStore.getState();
+  const actionOptions = selectableIds(ALL_ACTION_IDS, unlockedActions, rule.action.id);
 
   return (
     <li
@@ -113,7 +141,7 @@ function RuleRow({ rule, index, isActive, isDragOver, onDragStart, onDragOver, o
       <strong>If</strong>
       <ol>
         {rule.conditions.map((condition, i) => (
-          <ConditionRow key={i} rule={rule} condition={condition} index={i} />
+          <ConditionRow key={i} rule={rule} condition={condition} index={i} unlockedConditions={unlockedConditions} />
         ))}
       </ol>
       <button type="button" onClick={() => addCondition(rule.id)}>
@@ -122,7 +150,7 @@ function RuleRow({ rule, index, isActive, isDragOver, onDragStart, onDragOver, o
 
       <strong>then</strong>
       <select value={rule.action.id} onChange={(e) => setActionId(rule.id, e.target.value as ActionId)}>
-        {ACTION_IDS.map((id) => (
+        {actionOptions.map((id) => (
           <option key={id} value={id}>
             {ACTIONS[id].label}
           </option>
@@ -139,7 +167,15 @@ function RuleRow({ rule, index, isActive, isDragOver, onDragStart, onDragOver, o
   );
 }
 
-export function RuleEditor(): JSX.Element {
+export interface RuleEditorProps {
+  /** Conditions/actions selectable in the dropdowns, e.g. from
+   *  cumulativeUnlocksThrough(levelId). Defaults to the full catalog for
+   *  sandbox use outside a level (or wherever it isn't yet wired). */
+  unlockedConditions?: readonly ConditionId[];
+  unlockedActions?: readonly ActionId[];
+}
+
+export function RuleEditor({ unlockedConditions = ALL_CONDITION_IDS, unlockedActions = ALL_ACTION_IDS }: RuleEditorProps): JSX.Element {
   const policy = useEditorStore((s) => s.policy);
   const activeRuleId = usePlaybackStore((s) => s.activeRuleId);
   const { addRule, reorderRule } = useEditorStore.getState();
@@ -172,6 +208,8 @@ export function RuleEditor(): JSX.Element {
             onMove={(from, to) => reorderRule(from, to)}
             canMoveUp={index > 0}
             canMoveDown={index < policy.rules.length - 1}
+            unlockedConditions={unlockedConditions}
+            unlockedActions={unlockedActions}
           />
         ))}
       </ol>

@@ -147,3 +147,15 @@ export const DEFAULT_LOOKAHEAD_FLOORS = 5;
 export const DEFAULT_DIRECTION_COMMIT_THRESHOLD = 1;
 export const DEFAULT_MIN_DOOR_DWELL_TICKS = BASE_MIN_DOOR_DWELL_TICKS;
 export const DEFAULT_CAPACITY_RESERVE = 0;
+
+// ---------------------------------------------------------------------------
+// Faulty hall sensors (the "Stuck sensor" level). A faulty floor's calls
+// are only visible to normal dispatch conditions on a fixed duty cycle —
+// deterministic from the tick alone, so no extra RNG plumbing is needed.
+// The 'call-waited-longer-than' condition intentionally bypasses this (see
+// policy/ruleEngine.ts's allHallCalls), which is the point: the level is
+// solved by adding a timeout rule, not by a lucky dispatch decision.
+// ---------------------------------------------------------------------------
+
+export const FAULTY_SENSOR_CYCLE_TICKS = 200;
+export const FAULTY_SENSOR_VISIBLE_TICKS = 40;
