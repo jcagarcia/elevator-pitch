@@ -4,7 +4,6 @@ import { computeCompositeScore, computeStars, type StarRating } from '../../leve
 import type { StarThresholds } from '../../levels/types';
 import { TICK_RATE } from '../../sim/config';
 import type { SimResult } from '../../sim/simulate';
-import { usePlaybackStore } from '../../store/playbackStore';
 
 function formatTick(tick: number): string {
   const totalSeconds = Math.floor(tick / TICK_RATE);
@@ -26,7 +25,6 @@ export function ShiftReport({ result, starThresholds }: ShiftReportProps): JSX.E
   const composite = useMemo(() => computeCompositeScore(result.score), [result]);
   const stars = computeStars(composite, starThresholds);
   const worstMoments = useMemo(() => computeWorstMoments(result), [result]);
-  const requestSeek = usePlaybackStore((s) => s.requestSeek);
 
   return (
     <section aria-label="End-of-shift report">
@@ -50,9 +48,7 @@ export function ShiftReport({ result, starThresholds }: ShiftReportProps): JSX.E
         <ol>
           {worstMoments.map((moment, index) => (
             <li key={index}>
-              <button type="button" onClick={() => requestSeek(moment.tick)}>
-                Floor {moment.floor}, {formatTick(moment.tick)} — {moment.description}
-              </button>
+              Floor {moment.floor}, {formatTick(moment.tick)} — {moment.description}
             </li>
           ))}
         </ol>

@@ -156,37 +156,6 @@ body {
 }
 
 /* -------------------------------------------------------------------- */
-/* Saved policies                                                       */
-/* -------------------------------------------------------------------- */
-
-section[aria-label='Saved policies'] ul {
-  list-style: none;
-  margin: 0.5rem 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-section[aria-label='Saved policies'] li {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: var(--dark-panel-3);
-  border: var(--border-w-sm) solid var(--ink);
-  border-radius: 10px;
-  padding: 0.5rem 0.7rem;
-}
-
-section[aria-label='Saved policies'] li > :first-child {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* -------------------------------------------------------------------- */
 /* Headings                                                              */
 /* -------------------------------------------------------------------- */
 
@@ -844,77 +813,6 @@ label {
   line-height: 1.4;
 }
 
-.shift-screen__transport {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  background: var(--dark-panel-2);
-  border: var(--border-w) solid var(--ink);
-  border-radius: var(--radius-card);
-  padding: 0.75rem 1.1rem;
-  box-shadow: var(--shadow-panel);
-  flex-wrap: wrap;
-}
-
-.shift-screen__play-btn {
-  width: 2.9rem;
-  height: 2.9rem;
-  min-height: 0;
-  font-size: 1.05rem;
-  background: var(--orange);
-  color: var(--ink);
-  padding: 0;
-  flex-shrink: 0;
-}
-
-.shift-screen__play-btn:hover:not(:disabled) {
-  background: var(--orange-hover);
-}
-
-.shift-screen__scrub {
-  flex: 1;
-  min-width: 8rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  margin: 0;
-}
-
-.shift-screen__scrub input[type='range'] {
-  width: 100%;
-}
-
-.shift-screen__scrub input[type='range']::-webkit-slider-runnable-track {
-  background: var(--muted-on-dark-dim);
-}
-
-.shift-screen__time {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 0.78rem;
-  color: var(--muted-on-dark);
-  white-space: nowrap;
-}
-
-.shift-screen__speed-row {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.shift-screen__speed-row button {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 0.72rem;
-  padding: 0.5rem 0.65rem;
-  min-height: 0;
-}
-
-.shift-screen__hint {
-  color: var(--muted-on-dark);
-  font-size: 0.85rem;
-  margin: 0;
-}
-
 /* -------------------------------------------------------------------- */
 /* Rule editor (full editor, in the sidebar) — fired rule reads as a lit */
 /* indicator, same visual language as the shift screen's mini panel      */
@@ -1049,20 +947,6 @@ section[aria-label='End-of-shift report'] ol button {
   .shift-screen__topbar {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .shift-screen__transport {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .shift-screen__scrub {
-    order: 2;
-  }
-
-  .shift-screen__speed-row {
-    order: 3;
-    justify-content: center;
   }
 
   section[aria-label='Dispatch rules'] > ol > li {

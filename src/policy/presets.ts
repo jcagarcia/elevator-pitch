@@ -1,6 +1,7 @@
 import {
   DEFAULT_CAPACITY_RESERVE,
   DEFAULT_DIRECTION_COMMIT_THRESHOLD,
+  DEFAULT_LOOKAHEAD_FLOORS,
   DEFAULT_MIN_DOOR_DWELL_TICKS,
 } from '../sim/config';
 import type { DispatchPolicy, Rule } from './types';
@@ -8,6 +9,28 @@ import type { DispatchPolicy, Rule } from './types';
 function rule(id: string, conditions: Rule['conditions'], action: Rule['action']): Rule {
   return { id, enabled: true, conditions, action };
 }
+
+/**
+ * What every level actually starts from: default parameters (config.ts's
+ * DEFAULT_* constants — the neutral starting point they exist for) and no
+ * rules at all. With nothing telling it what to do, the car just sits
+ * there — the player has to build a working policy live, under real
+ * passengers, from this blank slate. Naive FCFS/SCAN/LOOK below are
+ * reference presets the player can load as a starting point if they want
+ * one, not what a level opens with.
+ */
+export const BLANK_POLICY: DispatchPolicy = {
+  name: 'Custom',
+  parameters: {
+    lookaheadFloors: DEFAULT_LOOKAHEAD_FLOORS,
+    directionCommitThreshold: DEFAULT_DIRECTION_COMMIT_THRESHOLD,
+    minDoorDwellTicks: DEFAULT_MIN_DOOR_DWELL_TICKS,
+    acceptReverseDirectionPickup: false,
+    capacityReserve: DEFAULT_CAPACITY_RESERVE,
+    idleParkingFloor: null,
+  },
+  rules: [],
+};
 
 /**
  * Serve calls in the order they arrived: go straight to whoever's been

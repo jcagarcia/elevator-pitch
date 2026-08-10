@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { ACTIONS, CONDITIONS } from '../policy/catalog';
-import { SCAN_PRESET } from '../policy/presets';
+import { BLANK_POLICY } from '../policy/presets';
 import type { Action, ActionId, Condition, ConditionId, DispatchParameters, DispatchPolicy, Rule } from '../policy/types';
 
 function newRuleId(): string {
@@ -31,7 +31,7 @@ interface EditorState {
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
-  policy: structuredClone(SCAN_PRESET),
+  policy: structuredClone(BLANK_POLICY),
 
   loadPreset: (preset) => set({ policy: structuredClone(preset) }),
 

@@ -17,8 +17,7 @@ export interface LiveRunOptions {
   /** Called once per simulated tick with that tick's car frames. */
   onFrame: (frame: CarFrame[], tick: number) => void;
   /** Called with only the events newly appended since the last call — for
-   *  the stairwell animation and sound cues, which react to occurrences,
-   *  not state. */
+   *  sound cues, which react to occurrences, not state. */
   onNewEvents: (events: readonly SimEvent[]) => void;
   onMoraleChange: (morale: number) => void;
   onStatusChange: (status: LiveRunStatus) => void;
@@ -27,11 +26,12 @@ export interface LiveRunOptions {
 /**
  * Drives a LiveSim forward in real time: a requestAnimationFrame loop that
  * converts elapsed wall-clock time into simulation ticks (scaled by
- * getSpeed()), stepping the sim that many ticks per frame. Unlike
- * PlaybackDriver, which scrubs a *precomputed* result, this is advancing
- * the actual simulation — the dispatch strategy is rebuilt from
- * getPolicy() before every tick, so a rule change lands on the very next
- * tick rather than only on a future re-run.
+ * getSpeed()), stepping the sim that many ticks per frame. The dispatch
+ * strategy is rebuilt from getPolicy() before every tick, so a rule change
+ * lands on the very next tick rather than only on a future re-run.
+ * getSpeed/getIsPaused keep the engine itself capable of pause/speed even
+ * though the player-facing UI doesn't expose either — the game always
+ * calls this with fixed values (1x, never paused).
  */
 export class LiveRunController {
   private rafHandle: number | null = null;

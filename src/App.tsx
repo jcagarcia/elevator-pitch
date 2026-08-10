@@ -1,22 +1,19 @@
 import { useMemo, useState } from 'react';
 import { cumulativeUnlocksThrough, getLevel, isLevelUnlocked, LEVELS } from './levels';
 import { computeCompositeScore, computeStars, type StarRating } from './levels/scoring';
-import { SCAN_PRESET } from './policy/presets';
+import { BLANK_POLICY } from './policy/presets';
 import type { SimResult } from './sim/simulate';
 import { useEditorStore } from './store/editorStore';
 import { useProgressStore } from './store/progressStore';
 import { ParameterPanel } from './ui/editor/ParameterPanel';
 import { RuleEditor } from './ui/editor/RuleEditor';
-import { SavedPolicies } from './ui/editor/SavedPolicies';
 import { ShiftReport } from './ui/report/ShiftReport';
 import { ElevatorViewport } from './ui/viewport/ElevatorViewport';
 
-type SidebarTab = 'parameters' | 'rules' | 'saved' | 'report';
+type SidebarTab = 'policy' | 'report';
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
-  { id: 'parameters', label: 'Parameters' },
-  { id: 'rules', label: 'Rules' },
-  { id: 'saved', label: 'Saved' },
+  { id: 'policy', label: 'Policy' },
   { id: 'report', label: 'Report' },
 ];
 
@@ -27,7 +24,7 @@ function starGlyphs(stars: StarRating): string {
 export function App(): JSX.Element {
   const [selectedLevelId, setSelectedLevelId] = useState(LEVELS[0]!.id);
   const [result, setResult] = useState<SimResult | null>(null);
-  const [activeTab, setActiveTab] = useState<SidebarTab>('parameters');
+  const [activeTab, setActiveTab] = useState<SidebarTab>('policy');
   const policyName = useEditorStore((s) => s.policy.name);
   const levelProgress = useProgressStore((s) => s.levelProgress);
 
@@ -36,15 +33,14 @@ export function App(): JSX.Element {
 
   function selectLevel(levelId: string): void {
     if (!isLevelUnlocked(levelId, levelProgress)) return;
-    // Every level starts from the same known-good baseline, running
-    // immediately — the player edits it live rather than pressing a
-    // separate "run" button first. Restarting the *same* level (via the
-    // viewport's own Restart control) intentionally keeps whatever policy
-    // the player has already edited instead of resetting it.
-    useEditorStore.getState().loadPreset(SCAN_PRESET);
+    // Nothing carries over between shifts, ever — every level (and every
+    // restart of the same level, handled inside ElevatorViewport) starts
+    // from the same blank policy: no rules, default parameters. The
+    // player builds it live, from scratch, under real passengers.
+    useEditorStore.getState().loadPreset(BLANK_POLICY);
     setSelectedLevelId(levelId);
     setResult(null);
-    setActiveTab('parameters');
+    setActiveTab('policy');
   }
 
   function handleShiftEnd(shiftResult: SimResult, status: 'succeeded' | 'failed'): void {
@@ -91,7 +87,7 @@ export function App(): JSX.Element {
             <h2>{level.name}</h2>
             <p>{level.briefing}</p>
           </article>
-          <ElevatorViewport level={level} onShiftEnd={handleShiftEnd} onRequestRuleEdit={() => setActiveTab('rules')} />
+          <ElevatorViewport level={level} onShiftEnd={handleShiftEnd} onRequestRuleEdit={() => setActiveTab('policy')} />
         </section>
 
         <aside className="sidebar" aria-label="Policy editor">
@@ -110,9 +106,12 @@ export function App(): JSX.Element {
             ))}
           </nav>
           <div className="sidebar__content">
-            {activeTab === 'parameters' && <ParameterPanel floors={level.floors} />}
-            {activeTab === 'rules' && <RuleEditor unlockedConditions={unlocks.conditions} unlockedActions={unlocks.actions} />}
-            {activeTab === 'saved' && <SavedPolicies />}
+            {activeTab === 'policy' && (
+              <>
+                <ParameterPanel floors={level.floors} />
+                <RuleEditor unlockedConditions={unlocks.conditions} unlockedActions={unlocks.actions} />
+              </>
+            )}
             {activeTab === 'report' && result && <ShiftReport result={result} starThresholds={level.starThresholds} />}
           </div>
         </aside>

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { ACTIONS, CONDITIONS } from '../../policy/catalog';
 import type { ActionId, Condition, ConditionId, Rule } from '../../policy/types';
 import { useEditorStore } from '../../store/editorStore';
-import { usePlaybackStore } from '../../store/playbackStore';
+import { useRuleFireStore } from '../../store/ruleFireStore';
 
 const ALL_CONDITION_IDS = Object.keys(CONDITIONS) as ConditionId[];
 const ALL_ACTION_IDS = Object.keys(ACTIONS) as ActionId[];
@@ -177,7 +177,7 @@ export interface RuleEditorProps {
 
 export function RuleEditor({ unlockedConditions = ALL_CONDITION_IDS, unlockedActions = ALL_ACTION_IDS }: RuleEditorProps): JSX.Element {
   const policy = useEditorStore((s) => s.policy);
-  const activeRuleId = usePlaybackStore((s) => s.activeRuleId);
+  const activeRuleId = useRuleFireStore((s) => s.activeRuleId);
   const { addRule, reorderRule } = useEditorStore.getState();
   const draggedIndex = useRef<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);

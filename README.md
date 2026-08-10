@@ -30,29 +30,32 @@ npm run lint           # eslint
 
 1. Pick a level. Each one is a fixed building, a fixed seeded traffic
    pattern, and a duration — read the briefing, it tells you what's about
-   to happen. The level starts immediately, loaded with the SCAN preset and
-   running live — there's no separate "run" button.
-2. While it's running, edit the policy: load a different preset (Naive
-   FCFS, SCAN, LOOK) or adjust it from scratch — parameters (lookahead
-   distance, capacity reserve, door dwell, idle parking, reverse-direction
-   pickup) and the rule list (drag to reorder, or the ↑/↓ buttons). Changes
-   land on the very next simulated tick, not on some future re-run — watch
-   the elevator react to what you just did.
+   to happen. The level starts immediately, loaded with a blank policy —
+   no rules, default parameters — and running live at a fixed 1x pace.
+   There's no "run" button, no pause, and no speed control: this is a
+   real-time game, not a simulation you drive.
+2. The car won't move on its own — with zero rules it just sits at floor 0.
+   Build the policy live, elsewhere in the UI, under real passengers: the
+   parameter panel and the rule editor share a single "Policy" tab (drag
+   rules to reorder, or use the ↑/↓ buttons). Changes land on the very next
+   simulated tick, not on some future re-run — watch the elevator react to
+   what you just did, in real time, with nothing to pause or rewind.
 3. Watch the morale meter. It's the pressure you're managing: cumulative
    penalty for everyone who's given up and walked to the stairs, plus the
    average frustration of everyone still waiting or riding. If it collapses
    below the failure threshold, the shift ends early — "service
    interrupted" — and the stairwell fills with the people you lost.
 4. If the shift instead runs its full duration, it ends successfully and
-   the viewport switches into a review phase: the same shaft, now
-   scrubbable start to finish, with the live "which rule fired" highlight
-   in the rule list exact for any point you scrub to (not a guess).
+   the shaft holds on its final frame while the status banner and report
+   explain what happened.
 5. Read the report: composite score, stars, and a ranked list of worst
-   moments. Click one to jump the playhead straight to it.
-6. **Restart shift** to try again on the same level with whatever policy
-   you currently have loaded (picking a *different* level instead resets to
-   the SCAN baseline — see "Live mode" below for why re-runs on an edited
-   live policy aren't byte-identical the way a fixed batch run is).
+   moments.
+6. **Restart shift** to try again on the same level — this resets the
+   policy back to the same blank slate a fresh level starts with (see
+   "Live mode" below for why re-runs on an edited live policy aren't
+   byte-identical the way a fixed batch run is). Nothing is ever saved
+   between shifts; there's no "load my best policy" — every attempt is
+   built from scratch, live.
 
 ## Architecture
 
@@ -81,39 +84,42 @@ src/
              and liveScore.ts's computeLiveMorale — a deliberately
              different, streaming-friendly metric for the live HUD (see
              "Live mode" below for why it isn't the same formula).
-  render/    two independent rAF-driven transport controllers, plus pure
-             scene-derivation helpers — no canvas, the shaft is DOM/CSS.
-             playback.ts's PlaybackDriver scrubs an already-computed
-             SimResult (review phase, and the old batch flow). liveRun.ts's
-             LiveRunController instead steps a live sim forward in real
-             time, tick by tick, rebuilding the DispatchStrategy from the
-             current policy before every single tick. sceneBuilder.ts turns
-             a passenger roster + a tick into per-floor waiting lists and
-             per-car rider lists — a pure function of (passengers, tick,
-             frustrationAt) shared by both the live and review phases, plus
+  render/    liveRun.ts's LiveRunController is the one rAF-driven
+             controller left — no canvas, no scrub/replay driver. It steps
+             a live sim forward in real time, tick by tick, rebuilding the
+             DispatchStrategy from the current policy before every single
+             tick. getSpeed/getIsPaused keep the engine itself capable of
+             pause/variable speed even though the game always calls it
+             with fixed values (1x, never paused) — the player has no
+             control over either. sceneBuilder.ts turns a passenger roster
+             + a tick into per-floor waiting lists and per-car rider lists
+             — a pure function of (passengers, tick, frustrationAt) — plus
              frustrationToProgress, the mapping from a passenger's raw
              frustration number onto PassengerFigure's 0-4 posture scale.
-             ruleHighlight.ts's ruleFiredPulseAt turns the rule-fired event
-             log into a bounded "still inside its ~0.6s pulse window" check
-             (not a persistent "currently active" flag) for the rule panel.
-  store/     zustand: current policy draft (editorStore), playback/live-run
-             transport state — play/pause, speed, current tick, fired-rule
-             highlight (playbackStore, shared by both phases), saved
-             policies + level progress persisted to localStorage
-             (progressStore).
+             ruleHighlight.ts's ruleFiredPulseAt turns a car's rule-fired
+             events into a bounded "still inside its ~0.6s pulse window"
+             check (not a persistent "currently active" flag) for the rule
+             panel.
+  store/     zustand: current policy draft (editorStore), which rule is
+             currently pulsing — shared between the Shift Screen's
+             read-only rule panel and the Policy tab's rule editor so both
+             flash in step (ruleFireStore), and level progress (stars,
+             best composite score) persisted to localStorage
+             (progressStore). Nothing about the policy itself persists —
+             every shift starts from the same blank slate.
   ui/        React. PassengerFigure.tsx is the signature element — see
              "Design notes" below. ui/viewport/ElevatorViewport is the main
              game surface: the DOM "Shift Screen" (top bar, shaft, rule
-             panel, transport bar), owning a live/review phase switch — a
-             level starts it running live immediately, and it flips to
-             review once the shift ends (success or failure) so the
-             finished result can be scrubbed. Every tick's scene (car
-             position/doors, per-floor waiting figures, the rule pulse) is
-             derived fresh from the live sim or the finished result via
-             sceneBuilder.ts, not accumulated as extra state. Everything
-             else (parameter panel, rule editor, saved policies, report)
-             lives in a tabbed sidebar next to it, not stacked above/below
-             it.
+             panel). A level starts it running live immediately; once the
+             shift ends, the LiveRunController simply stops calling back,
+             so re-deriving the scene from the sim's now-frozen state
+             naturally holds on the final frame — there's no separate
+             review/scrub data path to keep in sync. Every tick's scene
+             (car position/doors, per-floor waiting figures, the rule
+             pulse) is derived fresh via sceneBuilder.ts, not accumulated
+             as extra state. Everything else (the merged parameter+rule
+             "Policy" tab, the report) lives in a tabbed sidebar next to
+             it, not stacked above/below it.
   audio/     a handful of synthesized tones (Web Audio API, no audio
              files), off by default.
 tests/       mirrors src/. Vitest.
@@ -135,9 +141,7 @@ the sim loop.
 
 `runShift(config)` is a pure function of its input: a seed, a building, a
 passenger generator spec, and a dispatch strategy. Nothing in `src/sim` or
-`src/policy` reads `Date.now()`, `Math.random()`, or the DOM. Review-phase
-playback doesn't run the simulation again — it's a scrub through the one
-array of frames and events the finished shift already produced.
+`src/policy` reads `Date.now()`, `Math.random()`, or the DOM.
 `tests/sim/simulate.test.ts` asserts this directly: the same seed and
 policy, run twice through `runShift`, produce a byte-identical serialized
 result — and separately, that stepping a `LiveSim` one tick at a time via
@@ -257,10 +261,10 @@ figure owns its own small rAF loop, keyed by passenger id so reordering
 the (worst-first) waiting list never resets one mid-animation.
 
 The Shift Screen is deliberately the loudest part of the app; the sidebar
-(parameter panel, rule editor, saved policies, report) reuses the same
-tokens — panels, buttons, sliders — but stays visually quieter, since it's
-where the player reads and clicks rather than watches. Copy is written in
-the voice of a maintenance manual: "Restart shift," not "Reset simulation!"
+(the merged Policy tab, the report) reuses the same tokens — panels,
+buttons, sliders — but stays visually quieter, since it's where the player
+reads and clicks rather than watches. Copy is written in the voice of a
+maintenance manual: "Restart shift," not "Reset simulation!"
 
 Sound is a handful of synthesized tones (no audio files), off by default,
 one checkbox to turn on.
