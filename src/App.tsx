@@ -6,6 +6,7 @@ import { runShift, type SimResult } from './sim/simulate';
 import type { PassengerGenSpec } from './sim/passengerGenerator';
 import { useEditorStore } from './store/editorStore';
 import { ParameterPanel } from './ui/editor/ParameterPanel';
+import { RuleEditor } from './ui/editor/RuleEditor';
 import { RunView } from './ui/run/RunView';
 
 const DEMO_BUILDING: BuildingSpec = { floors: 10, carCount: 1, capacityPerCar: 8 };
@@ -40,6 +41,7 @@ export function App(): JSX.Element {
       <h1>Elevator Pitch</h1>
       <p>Service panel under construction. Dispatch policy: {policyName} (demo, seed {DEMO_SEED}).</p>
       <ParameterPanel floors={DEMO_BUILDING.floors} />
+      <RuleEditor />
       <button type="button" onClick={runShiftWithCurrentPolicy}>
         Run shift
       </button>

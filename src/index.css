@@ -1,0 +1,16 @@
+/*
+ * Placeholder styling only — Phase 6 replaces this with the real control-
+ * panel visual design. For now this exists so the two things that are
+ * functionally meaningless without *some* visual treatment (the live rule
+ * highlight, and reordering feedback) are actually visible, not just
+ * present in the DOM.
+ */
+
+[data-active='true'] {
+  outline: 3px solid #2f8f3f;
+  background: #eafbea;
+}
+
+[data-drag-over='true'] {
+  outline: 2px dashed #3f6fa8;
+}

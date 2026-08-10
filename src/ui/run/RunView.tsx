@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { computeGeometry, drawShift } from '../../render/canvas';
 import { PlaybackDriver } from '../../render/playback';
+import { activeRuleIdAt, groupRuleFiredByCar } from '../../render/ruleHighlight';
 import { TICK_RATE } from '../../sim/config';
 import type { SimResult } from '../../sim/simulate';
 import { PLAYBACK_SPEEDS, usePlaybackStore, type PlaybackSpeed } from '../../store/playbackStore';
@@ -19,12 +20,15 @@ export interface RunViewProps {
   result: SimResult;
   floors: number;
   carCount: number;
+  /** Which car's active rule to report for the live rule highlight. */
+  watchedCarId?: number;
 }
 
-export function RunView({ result, floors, carCount }: RunViewProps): JSX.Element {
+export function RunView({ result, floors, carCount, watchedCarId = 0 }: RunViewProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const driverRef = useRef<PlaybackDriver | null>(null);
   const geometry = useMemo(() => computeGeometry(CANVAS_WIDTH, CANVAS_HEIGHT, floors, carCount), [floors, carCount]);
+  const ruleFiredByCar = useMemo(() => groupRuleFiredByCar(result.events), [result]);
 
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const speed = usePlaybackStore((s) => s.speed);
@@ -36,7 +40,8 @@ export function RunView({ result, floors, carCount }: RunViewProps): JSX.Element
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
 
-    usePlaybackStore.setState({ isPlaying: false, currentTick: 0 });
+    usePlaybackStore.setState({ isPlaying: false, currentTick: 0, activeRuleId: null });
+    const watchedCarEvents = ruleFiredByCar.get(watchedCarId);
 
     const driver = new PlaybackDriver({
       durationTicks: result.frames.length,
@@ -45,6 +50,11 @@ export function RunView({ result, floors, carCount }: RunViewProps): JSX.Element
       onTick: (tick) => {
         drawShift(ctx, result, geometry, tick);
         usePlaybackStore.setState({ currentTick: tick });
+
+        const active = activeRuleIdAt(watchedCarEvents, tick);
+        if (active !== usePlaybackStore.getState().activeRuleId) {
+          usePlaybackStore.setState({ activeRuleId: active });
+        }
       },
       onEnd: () => {
         usePlaybackStore.setState({ isPlaying: false });
@@ -57,7 +67,7 @@ export function RunView({ result, floors, carCount }: RunViewProps): JSX.Element
       driver.stop();
       driverRef.current = null;
     };
-  }, [result, geometry]);
+  }, [result, geometry, ruleFiredByCar, watchedCarId]);
 
   function handleScrub(tick: number): void {
     driverRef.current?.seek(tick);
