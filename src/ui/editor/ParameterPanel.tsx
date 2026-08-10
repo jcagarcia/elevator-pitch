@@ -1,9 +1,6 @@
 import { BASE_MIN_DOOR_DWELL_TICKS, TICK_RATE } from '../../sim/config';
-import { LOOK_PRESET, NAIVE_FCFS_PRESET, SCAN_PRESET } from '../../policy/presets';
-import type { DispatchPolicy } from '../../policy/types';
 import { useEditorStore } from '../../store/editorStore';
 
-const PRESETS: readonly DispatchPolicy[] = [NAIVE_FCFS_PRESET, SCAN_PRESET, LOOK_PRESET];
 const LOOKAHEAD_MAX = 20;
 const MAX_DOOR_DWELL_TICKS = 60;
 
@@ -13,21 +10,12 @@ export interface ParameterPanelProps {
 
 export function ParameterPanel({ floors }: ParameterPanelProps): JSX.Element {
   const policy = useEditorStore((s) => s.policy);
-  const { loadPreset, setParameter } = useEditorStore.getState();
+  const { setParameter } = useEditorStore.getState();
   const params = policy.parameters;
 
   return (
     <section aria-label="Dispatch policy parameters">
       <h2>Policy: {policy.name}</h2>
-
-      <fieldset>
-        <legend>Load preset</legend>
-        {PRESETS.map((preset) => (
-          <button key={preset.name} type="button" onClick={() => loadPreset(preset)} aria-pressed={policy.name === preset.name}>
-            {preset.name}
-          </button>
-        ))}
-      </fieldset>
 
       <fieldset>
         <legend>Lookahead distance</legend>
