@@ -148,7 +148,7 @@ function stepCarMovementAndDoors(state: SimState, car: Car, dispatch: DispatchSt
       const prevPosition = car.position;
       const { arrived, floorsCrossed } = advanceCarPosition(car);
       for (const floor of floorsCrossed) {
-        checkPassedBy(state, car, floor);
+        checkPassedBy(state, car, floor, dispatch);
       }
       applyWrongDirection(state, car, prevPosition);
       if (arrived) {
@@ -165,7 +165,7 @@ function stepCarMovementAndDoors(state: SimState, car: Car, dispatch: DispatchSt
       car.doorState = 'open';
       car.doorPhaseTicks = 0;
       car.doorOpenElapsedTicks = 0;
-      car.requiredDwellTicks = resolveStop(state, car);
+      car.requiredDwellTicks = resolveStop(state, car, dispatch);
     }
     return;
   }
@@ -181,7 +181,7 @@ function stepCarMovementAndDoors(state: SimState, car: Car, dispatch: DispatchSt
 
   // car.doorState === 'closing'
   const floor = Math.round(car.position);
-  if (shouldReopenDoors(state, car, floor)) {
+  if (shouldReopenDoors(state, car, floor, dispatch)) {
     car.doorState = 'opening';
     car.doorPhaseTicks = 0;
     state.events.push({ type: 'doors-reopened', tick: state.tick, carId: car.id, floor });
@@ -200,17 +200,22 @@ function stepCarMovementAndDoors(state: SimState, car: Car, dispatch: DispatchSt
   }
 }
 
+function effectiveCapacityOf(car: Car, dispatch: DispatchStrategy): number {
+  return dispatch.effectiveCapacity?.(car) ?? car.capacity;
+}
+
 /** A new compatible call at the floor the car is currently closing its
  *  doors at reopens them — small, comedic, and only possible while there's
  *  still room aboard. */
-function shouldReopenDoors(state: SimState, car: Car, floor: number): boolean {
-  if (car.passengers.length >= car.capacity) return false;
+function shouldReopenDoors(state: SimState, car: Car, floor: number, dispatch: DispatchStrategy): boolean {
+  if (car.passengers.length >= effectiveCapacityOf(car, dispatch)) return false;
   return state.passengers.some((p) => p.state === 'waiting' && p.originFloor === floor && p.spawnTick === state.tick);
 }
 
-function resolveStop(state: SimState, car: Car): number {
+function resolveStop(state: SimState, car: Car, dispatch: DispatchStrategy): number {
   const floor = Math.round(car.position);
-  let dwellTicksNeeded = BASE_MIN_DOOR_DWELL_TICKS;
+  const capacity = effectiveCapacityOf(car, dispatch);
+  let dwellTicksNeeded = Math.max(BASE_MIN_DOOR_DWELL_TICKS, dispatch.minDoorDwellTicks?.() ?? 0);
 
   const stillAboard: number[] = [];
   for (const passengerId of car.passengers) {
@@ -235,7 +240,7 @@ function resolveStop(state: SimState, car: Car): number {
     .sort((a, b) => a.spawnTick - b.spawnTick);
 
   for (const passenger of waitingHere) {
-    if (car.passengers.length >= car.capacity) break;
+    if (car.passengers.length >= capacity) break;
     passenger.state = 'riding';
     passenger.carId = car.id;
     passenger.boardedTick = state.tick;
@@ -253,8 +258,8 @@ function boardAlightTicksFor(passenger: Passenger): number {
   return BOARD_ALIGHT_TICKS_PER_PASSENGER * (heavy ? HEAVY_TRAIT_DWELL_MULTIPLIER : 1);
 }
 
-function checkPassedBy(state: SimState, car: Car, floor: number): void {
-  if (car.passengers.length >= car.capacity) return;
+function checkPassedBy(state: SimState, car: Car, floor: number, dispatch: DispatchStrategy): void {
+  if (car.passengers.length >= effectiveCapacityOf(car, dispatch)) return;
   if (car.direction === 'idle') return;
   for (const passenger of state.passengers) {
     if (passenger.state !== 'waiting') continue;

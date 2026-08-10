@@ -9,11 +9,21 @@ export interface DispatchDecision {
 
 /** The seam between the sim loop and whatever is choosing targets for each
  *  car. Phase 1 ships one hardcoded strategy (naive FCFS) so the sim loop
- *  can be proven end to end; Phase 3 replaces the implementation behind this
- *  interface with the rule-based policy engine without touching simulate.ts. */
+ *  can be proven end to end; Phase 3 adds the rule-based policy engine
+ *  behind the same interface, plus two optional hooks so policy parameters
+ *  (capacity reserve, minimum door dwell) can influence boarding/dwell
+ *  behavior that lives in simulate.ts without simulate.ts knowing anything
+ *  about policies. */
 export interface DispatchStrategy {
   readonly name: string;
   decideNextTarget(car: Car, state: SimState): DispatchDecision;
+  /** How many passengers this car will actually board before "full",
+   *  which may be less than its physical capacity. Defaults to
+   *  car.capacity when omitted. */
+  effectiveCapacity?(car: Car): number;
+  /** Floor under which the base door dwell (config.ts) is never allowed to
+   *  drop. Only ever raises the minimum; omit to use the base value as-is. */
+  minDoorDwellTicks?(): number;
 }
 
 /**

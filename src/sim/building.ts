@@ -18,6 +18,7 @@ export function createBuilding(spec: BuildingSpec): Building {
       position: startFloor,
       velocity: 0,
       direction: 'idle',
+      committedDirection: 'idle',
       doorState: 'closed',
       doorPhaseTicks: 0,
       doorOpenElapsedTicks: 0,

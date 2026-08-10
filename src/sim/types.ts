@@ -82,7 +82,14 @@ export interface Car {
   /** Continuous floor position, e.g. 3.42. */
   position: number;
   velocity: number;
+  /** Instantaneous physical motion direction — 'idle' whenever velocity is
+   *  zero, including briefly between stops. Set by sim/physics.ts. */
   direction: Direction;
+  /** The dispatch layer's notion of which way this car is currently
+   *  sweeping — persists across stops, unlike `direction`. Read and written
+   *  by the policy engine (see policy/ruleEngine.ts); the sim core never
+   *  touches it beyond initializing it to 'idle'. */
+  committedDirection: Direction;
   doorState: DoorState;
   /** Ticks elapsed in the current door phase. */
   doorPhaseTicks: number;
