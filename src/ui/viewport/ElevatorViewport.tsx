@@ -301,18 +301,16 @@ export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watched
         </div>
       </div>
 
-      {finishedStatus === null && (
-        <div className="shift-screen__morale" role="status" aria-label={`Passenger morale: ${liveMorale} of ${LIVE_MORALE_MAX}`}>
-          <span className="shift-screen__morale-label">Morale</span>
-          <span className="shift-screen__morale-track">
-            <span
-              className={`shift-screen__morale-fill${moraleFraction < 0.35 ? ' shift-screen__morale-fill--danger' : ''}`}
-              style={{ width: `${moraleFraction * 100}%` }}
-            />
-          </span>
-          <span className="shift-screen__morale-value">{liveMorale}</span>
-        </div>
-      )}
+      <div className="shift-screen__morale" role="status" aria-label={`Passenger morale: ${liveMorale} of ${LIVE_MORALE_MAX}`}>
+        <span className="shift-screen__morale-label">Morale</span>
+        <span className="shift-screen__morale-track">
+          <span
+            className={`shift-screen__morale-fill${moraleFraction < 0.35 ? ' shift-screen__morale-fill--danger' : ''}`}
+            style={{ width: `${moraleFraction * 100}%` }}
+          />
+        </span>
+        <span className="shift-screen__morale-value">{liveMorale}</span>
+      </div>
 
       {(isFailed || isSucceeded) && (
         <p className={`shift-screen__status ${isFailed ? 'shift-screen__status--failed' : 'shift-screen__status--succeeded'}`}>
