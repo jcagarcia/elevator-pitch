@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { cumulativeUnlocksThrough, getLevel, LEVELS } from './levels';
+import { cumulativeUnlocksThrough, getLevel, isLevelUnlocked, LEVELS } from './levels';
 import { runLevel } from './levels/runLevel';
 import { computeCompositeScore, computeStars, type StarRating } from './levels/scoring';
 import { createPolicyDispatch } from './policy/ruleEngine';
@@ -36,6 +36,7 @@ export function App(): JSX.Element {
   const unlocks = useMemo(() => cumulativeUnlocksThrough(selectedLevelId), [selectedLevelId]);
 
   function selectLevel(levelId: string): void {
+    if (!isLevelUnlocked(levelId, levelProgress)) return;
     setSelectedLevelId(levelId);
     setResult(null);
     setActiveTab('parameters');
@@ -58,12 +59,20 @@ export function App(): JSX.Element {
         <h1>Elevator Pitch</h1>
         <nav aria-label="Level select">
           <ol>
-            {LEVELS.map((l) => {
+            {LEVELS.map((l, index) => {
               const progress = levelProgress[l.id];
+              const unlocked = isLevelUnlocked(l.id, levelProgress);
+              const previous = LEVELS[index - 1];
               return (
                 <li key={l.id}>
-                  <button type="button" onClick={() => selectLevel(l.id)} aria-pressed={l.id === selectedLevelId}>
-                    {l.name} {progress ? starGlyphs(progress.stars) : ''}
+                  <button
+                    type="button"
+                    onClick={() => selectLevel(l.id)}
+                    aria-pressed={l.id === selectedLevelId}
+                    disabled={!unlocked}
+                    aria-label={unlocked ? undefined : `${l.name}, locked — clear ${previous?.name ?? 'the previous level'} first`}
+                  >
+                    {l.name} {unlocked ? (progress ? starGlyphs(progress.stars) : '') : '(locked)'}
                   </button>
                 </li>
               );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cumulativeUnlocksThrough, getLevel, LEVELS } from '../../src/levels';
+import { cumulativeUnlocksThrough, getLevel, isLevelUnlocked, LEVELS } from '../../src/levels';
 
 describe('LEVELS', () => {
   it('has exactly the seven levels the brief calls for, in a fixed order', () => {
@@ -58,5 +58,33 @@ describe('cumulativeUnlocksThrough', () => {
   it('an unknown level id unlocks everything, matching a sandbox/no-level context', () => {
     const result = cumulativeUnlocksThrough('unknown');
     expect(result.conditions.length).toBeGreaterThan(0);
+  });
+});
+
+describe('isLevelUnlocked', () => {
+  it('level 1 is always unlocked, even with no progress at all', () => {
+    expect(isLevelUnlocked('morning-rush', {})).toBe(true);
+  });
+
+  it('a later level is locked until the previous one has at least one star', () => {
+    expect(isLevelUnlocked('evening-down-peak', {})).toBe(false);
+    expect(isLevelUnlocked('evening-down-peak', { 'morning-rush': { stars: 0 } })).toBe(false);
+    expect(isLevelUnlocked('evening-down-peak', { 'morning-rush': { stars: 1 } })).toBe(true);
+    expect(isLevelUnlocked('evening-down-peak', { 'morning-rush': { stars: 3 } })).toBe(true);
+  });
+
+  it('stars on other levels do not unlock a level whose immediate predecessor is uncleared', () => {
+    // 3 stars on level 1, but level 3 needs level 2 cleared, not level 1.
+    expect(isLevelUnlocked('lunch-scatter', { 'morning-rush': { stars: 3 } })).toBe(false);
+    expect(
+      isLevelUnlocked('lunch-scatter', {
+        'morning-rush': { stars: 3 },
+        'evening-down-peak': { stars: 1 },
+      }),
+    ).toBe(true);
+  });
+
+  it('an unknown level id is treated as unlocked (defensive default, matches cumulativeUnlocksThrough)', () => {
+    expect(isLevelUnlocked('does-not-exist', {})).toBe(true);
   });
 });

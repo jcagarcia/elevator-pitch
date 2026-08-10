@@ -22,6 +22,27 @@ export function getLevel(id: string): LevelDef | undefined {
   return LEVELS.find((level) => level.id === id);
 }
 
+/** Minimum stars on a level required to unlock the next one. Matches a
+ *  level's own "one star" threshold — clearing the bar the level author
+ *  already calibrated as "a working policy," not a stricter bar of our own. */
+const STARS_TO_ADVANCE = 1;
+
+/**
+ * The game always opens on level 1, and each subsequent level unlocks only
+ * once the one before it has been cleared — this is what "cleared" means
+ * for progression purposes, decoupled from the store: takes a plain
+ * id -> stars record (structurally compatible with
+ * progressStore's levelProgress) rather than importing the store's types,
+ * since store/ already depends on levels/ and the reverse would be circular.
+ */
+export function isLevelUnlocked(levelId: string, starsById: Readonly<Record<string, { stars: number }>>): boolean {
+  const index = LEVELS.findIndex((level) => level.id === levelId);
+  if (index <= 0) return true;
+  const previous = LEVELS[index - 1];
+  if (!previous) return true;
+  return (starsById[previous.id]?.stars ?? 0) >= STARS_TO_ADVANCE;
+}
+
 /** Everything unlocked by clearing levels up to and including `levelId`
  *  (levels are unlocked in fixed order — this sums every level at or before
  *  it in LEVELS, not just ones the player has actually starred). */
