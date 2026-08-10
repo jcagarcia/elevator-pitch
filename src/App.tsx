@@ -10,7 +10,16 @@ import { ParameterPanel } from './ui/editor/ParameterPanel';
 import { RuleEditor } from './ui/editor/RuleEditor';
 import { SavedPolicies } from './ui/editor/SavedPolicies';
 import { ShiftReport } from './ui/report/ShiftReport';
-import { RunView } from './ui/run/RunView';
+import { ElevatorViewport } from './ui/viewport/ElevatorViewport';
+
+type SidebarTab = 'parameters' | 'rules' | 'saved' | 'report';
+
+const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
+  { id: 'parameters', label: 'Parameters' },
+  { id: 'rules', label: 'Rules' },
+  { id: 'saved', label: 'Saved' },
+  { id: 'report', label: 'Report' },
+];
 
 function starGlyphs(stars: StarRating): string {
   return '★★★☆☆☆'.slice(3 - stars, 6 - stars);
@@ -19,6 +28,7 @@ function starGlyphs(stars: StarRating): string {
 export function App(): JSX.Element {
   const [selectedLevelId, setSelectedLevelId] = useState(LEVELS[0]!.id);
   const [result, setResult] = useState<SimResult | null>(null);
+  const [activeTab, setActiveTab] = useState<SidebarTab>('parameters');
   const policyName = useEditorStore((s) => s.policy.name);
   const levelProgress = useProgressStore((s) => s.levelProgress);
 
@@ -28,6 +38,7 @@ export function App(): JSX.Element {
   function selectLevel(levelId: string): void {
     setSelectedLevelId(levelId);
     setResult(null);
+    setActiveTab('parameters');
   }
 
   function runShiftWithCurrentPolicy(): void {
@@ -38,47 +49,61 @@ export function App(): JSX.Element {
     const composite = computeCompositeScore(shiftResult.score);
     const stars = computeStars(composite, level.starThresholds);
     useProgressStore.getState().recordLevelResult(level.id, stars, composite);
+    setActiveTab('report');
   }
 
   return (
-    <main>
-      <h1>Elevator Pitch</h1>
+    <main className="app-shell">
+      <header className="app-header">
+        <h1>Elevator Pitch</h1>
+        <nav aria-label="Level select">
+          <ol>
+            {LEVELS.map((l) => {
+              const progress = levelProgress[l.id];
+              return (
+                <li key={l.id}>
+                  <button type="button" onClick={() => selectLevel(l.id)} aria-pressed={l.id === selectedLevelId}>
+                    {l.name} {progress ? starGlyphs(progress.stars) : ''}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      </header>
 
-      <nav aria-label="Level select">
-        <h2>Levels</h2>
-        <ol>
-          {LEVELS.map((l) => {
-            const progress = levelProgress[l.id];
-            return (
-              <li key={l.id}>
-                <button type="button" onClick={() => selectLevel(l.id)} aria-pressed={l.id === selectedLevelId}>
-                  {l.name} {progress ? starGlyphs(progress.stars) : ''}
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      </nav>
+      <div className="game-layout">
+        <section className="viewport-column" aria-label="Elevator viewport">
+          <article aria-label="Level briefing">
+            <h2>{level.name}</h2>
+            <p>{level.briefing}</p>
+          </article>
+          <ElevatorViewport floors={level.floors} carCount={level.carCount} result={result} onRunShift={runShiftWithCurrentPolicy} />
+        </section>
 
-      <article aria-label="Level briefing">
-        <h2>{level.name}</h2>
-        <p>{level.briefing}</p>
-      </article>
-
-      <p>Dispatch policy: {policyName}</p>
-      <ParameterPanel floors={level.floors} />
-      <RuleEditor unlockedConditions={unlocks.conditions} unlockedActions={unlocks.actions} />
-      <SavedPolicies />
-      <button type="button" onClick={runShiftWithCurrentPolicy}>
-        Run shift
-      </button>
-
-      {result && (
-        <>
-          <RunView result={result} floors={level.floors} carCount={level.carCount} />
-          <ShiftReport result={result} starThresholds={level.starThresholds} />
-        </>
-      )}
+        <aside className="sidebar" aria-label="Policy editor">
+          <p className="sidebar__policy-name">Dispatch policy: {policyName}</p>
+          <nav className="sidebar__tabs" aria-label="Editor sections">
+            {SIDEBAR_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                aria-pressed={activeTab === tab.id}
+                disabled={tab.id === 'report' && !result}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar__content">
+            {activeTab === 'parameters' && <ParameterPanel floors={level.floors} />}
+            {activeTab === 'rules' && <RuleEditor unlockedConditions={unlocks.conditions} unlockedActions={unlocks.actions} />}
+            {activeTab === 'saved' && <SavedPolicies />}
+            {activeTab === 'report' && result && <ShiftReport result={result} starThresholds={level.starThresholds} />}
+          </div>
+        </aside>
+      </div>
     </main>
   );
 }

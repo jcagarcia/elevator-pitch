@@ -13,11 +13,11 @@ interface PlaybackState {
   currentTick: number;
   /** Which rule fired the currently-in-effect decision for the car the
    *  editor is watching, at currentTick — null if none has fired yet or no
-   *  rule matched. Only set when it actually changes (see RunView), so this
+   *  rule matched. Only set when it actually changes (see ElevatorViewport), so this
    *  doesn't churn on every animation frame. */
   activeRuleId: string | null;
-  /** Incremented every time something outside RunView (e.g. the report's
-   *  "worst moments" list) wants to jump the playhead. RunView watches this
+  /** Incremented every time something outside ElevatorViewport (e.g. the report's
+   *  "worst moments" list) wants to jump the playhead. ElevatorViewport watches this
    *  counter rather than currentTick directly, since currentTick itself
    *  changes 60x/sec during normal playback and can't double as a signal. */
   seekRequestId: number;

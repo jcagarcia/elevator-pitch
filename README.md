@@ -69,7 +69,12 @@ src/
   store/     zustand: current policy draft (editorStore), playback state
              (playbackStore), saved policies + level progress, persisted to
              localStorage (progressStore).
-  ui/        React: parameter panel, rule editor, run controls, report.
+  ui/        React. ui/viewport/ElevatorViewport is the main game surface —
+             a responsive canvas (resizes with the window via
+             ResizeObserver) showing the building, idle before the first
+             run and fully played back after. Everything else (parameter
+             panel, rule editor, saved policies, report) lives in a tabbed
+             sidebar next to it, not stacked above/below it.
   audio/     a handful of synthesized tones (Web Audio API, no audio
              files), off by default.
 tests/       mirrors src/. Vitest.

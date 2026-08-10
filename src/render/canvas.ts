@@ -74,6 +74,33 @@ export function drawShift(ctx: CanvasRenderingContext2D, result: SimResult, geom
   drawWaitingPassengers(ctx, result, tickA, shaftWidth, width, floorHeight, height);
 }
 
+/**
+ * Draws the building with cars parked at the ground floor and nobody
+ * aboard or waiting — the "nothing has run yet" state, shown as soon as a
+ * level is selected so the viewport reads as a real instrument, not an
+ * empty box waiting for you to press a button first.
+ */
+export function drawIdleShaft(ctx: CanvasRenderingContext2D, geometry: RenderGeometry): void {
+  const { width, height, floors, carCount, floorHeight, shaftWidth, carLaneWidth } = geometry;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#15181c';
+  ctx.fillRect(0, 0, width, height);
+
+  drawFloorGrid(ctx, floors, floorHeight, shaftWidth);
+
+  for (let carIndex = 0; carIndex < carCount; carIndex++) {
+    const x = carIndex * carLaneWidth;
+    const y = height - floorHeight;
+    const padding = 4;
+    ctx.fillStyle = '#3f6fa8';
+    ctx.fillRect(x + padding, y + padding, carLaneWidth - padding * 2, floorHeight - padding * 2);
+    ctx.strokeStyle = '#8fb4de';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + padding + 0.5, y + padding + 0.5, carLaneWidth - padding * 2 - 1, floorHeight - padding * 2 - 1);
+  }
+}
+
 function drawFloorGrid(ctx: CanvasRenderingContext2D, floors: number, floorHeight: number, shaftWidth: number): void {
   ctx.strokeStyle = '#33383f';
   ctx.fillStyle = '#8a939c';
