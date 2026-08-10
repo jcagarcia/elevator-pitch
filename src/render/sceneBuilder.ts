@@ -35,11 +35,15 @@ export interface FigurePax {
   readonly id: PassengerId;
   readonly progress: number;
   readonly exiting: boolean;
+  readonly destFloor: number;
 }
 
 export interface FloorScene {
   readonly showDial: boolean;
   readonly worstProgress: number;
+  /** Destination of whichever waiting passenger is worst-off — null only
+   *  when showDial is false (nobody actually waiting to anchor a dial to). */
+  readonly worstDestFloor: number | null;
   /** Waiting passengers plus anyone still mid-exit, worst-first — the row
    *  of small figures rendered along the floor's wait area. */
   readonly waiting: readonly FigurePax[];
@@ -60,25 +64,25 @@ export function buildFloorScenes(
   frustrationAt: (id: PassengerId) => number,
 ): FloorScene[] {
   const waitingByFloor = new Map<number, FigurePax[]>();
-  const worstByFloor = new Map<number, number>();
+  const worstByFloor = new Map<number, { progress: number; destFloor: number }>();
 
   for (const passenger of passengers) {
     const state = passengerStateAtTick(passenger, tick);
     if (state === 'waiting') {
       const progress = frustrationToProgress(frustrationAt(passenger.id));
-      pushPax(waitingByFloor, passenger.originFloor, { id: passenger.id, progress, exiting: false });
-      const worst = worstByFloor.get(passenger.originFloor) ?? 0;
-      if (progress > worst) worstByFloor.set(passenger.originFloor, progress);
+      pushPax(waitingByFloor, passenger.originFloor, { id: passenger.id, progress, exiting: false, destFloor: passenger.destFloor });
+      const worst = worstByFloor.get(passenger.originFloor);
+      if (!worst || progress > worst.progress) worstByFloor.set(passenger.originFloor, { progress, destFloor: passenger.destFloor });
     } else if (state === 'gave-up' && passenger.gaveUpTick !== null && tick - passenger.gaveUpTick < GAVE_UP_EXIT_GRACE_TICKS) {
-      pushPax(waitingByFloor, passenger.originFloor, { id: passenger.id, progress: 4, exiting: true });
+      pushPax(waitingByFloor, passenger.originFloor, { id: passenger.id, progress: 4, exiting: true, destFloor: passenger.destFloor });
     }
   }
 
   const scenes: FloorScene[] = [];
   for (let floor = 0; floor < floors; floor++) {
     const waiting = (waitingByFloor.get(floor) ?? []).sort((a, b) => b.progress - a.progress);
-    const worstProgress = worstByFloor.get(floor) ?? 0;
-    scenes.push({ showDial: worstByFloor.has(floor), worstProgress, waiting });
+    const worst = worstByFloor.get(floor);
+    scenes.push({ showDial: worst !== undefined, worstProgress: worst?.progress ?? 0, worstDestFloor: worst?.destFloor ?? null, waiting });
   }
   return scenes;
 }
@@ -102,7 +106,7 @@ export function ridersOfCar(
   for (const passenger of passengers) {
     if (passenger.carId !== carId) continue;
     if (passengerStateAtTick(passenger, tick) !== 'riding') continue;
-    riders.push({ id: passenger.id, progress: frustrationToProgress(frustrationAt(passenger.id)), exiting: false });
+    riders.push({ id: passenger.id, progress: frustrationToProgress(frustrationAt(passenger.id)), exiting: false, destFloor: passenger.destFloor });
   }
   return riders;
 }

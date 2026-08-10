@@ -3,14 +3,17 @@ import { isSoundEnabled, playDelivered, playGaveUp, setSoundEnabled } from '../.
 import { LIVE_MORALE_MAX } from '../../levels/liveScore';
 import type { LevelDef } from '../../levels/types';
 import { ACTIONS, CONDITIONS } from '../../policy/catalog';
+import { createManualDispatch } from '../../policy/manualDispatch';
 import { BLANK_POLICY } from '../../policy/presets';
+import { createPolicyDispatch } from '../../policy/ruleEngine';
 import type { Rule } from '../../policy/types';
 import { LiveRunController, type LiveRunStatus } from '../../render/liveRun';
 import { ruleFiredPulseAt, type RuleFiredEvent } from '../../render/ruleHighlight';
 import { buildFloorScenes, ridersOfCar, type FigurePax } from '../../render/sceneBuilder';
 import { DOOR_CLOSE_TICKS, DOOR_OPEN_TICKS, TICK_RATE } from '../../sim/config';
+import type { DispatchStrategy } from '../../sim/dispatch';
 import { computeScore, initLiveSim, type LiveSim, type SimResult } from '../../sim/simulate';
-import type { CarFrame, DoorState } from '../../sim/types';
+import type { CarFrame, CarId, DoorState } from '../../sim/types';
 import { useEditorStore } from '../../store/editorStore';
 import { useRuleFireStore } from '../../store/ruleFireStore';
 import { DotMatrixDisplay } from '../DotMatrixDisplay';
@@ -33,6 +36,8 @@ const CAR_HEIGHT = FLOOR_ROW_HEIGHT - 14;
 /** First second of a shift reads as START rather than IN PROGRESS — long
  *  enough to be legible, short enough not to feel stuck. */
 const START_LABEL_TICKS = TICK_RATE;
+
+type ControlMode = 'auto' | 'manual';
 
 function formatTick(tick: number): string {
   const totalSeconds = Math.floor(tick / TICK_RATE);
@@ -67,6 +72,10 @@ function carLabel(index: number): string {
   return `CAR ${String.fromCharCode(65 + index)}`;
 }
 
+function floorDigits(floor: number): string {
+  return String(floor).padStart(2, '0');
+}
+
 interface RulePanelRow {
   readonly ruleId: string;
   readonly condText: string;
@@ -84,10 +93,25 @@ function buildRulePanelRows(rules: readonly Rule[]): RulePanelRow[] {
 }
 
 interface CarPose {
-  readonly id: number;
+  readonly id: CarId;
   readonly position: number;
   readonly doorFraction: number;
+  readonly targetFloor: number | null;
   readonly riders: readonly FigurePax[];
+}
+
+/** A passenger figure with a small destination-floor tag above its head —
+ *  shared by the wait area, the call dial, and riders inside the car, so
+ *  the player always knows where someone's headed, not just how upset
+ *  they are. Essential once manual control is an option (you're the one
+ *  choosing where the car goes), useful even under automatic rules. */
+function FigureWithDest({ pax, showGauge, scale }: { pax: Pick<FigurePax, 'progress' | 'exiting' | 'destFloor'>; showGauge: boolean; scale: number }): JSX.Element {
+  return (
+    <div className="shift-screen__figure-with-dest">
+      <span className="shift-screen__dest-tag">{floorDigits(pax.destFloor)}</span>
+      <PassengerFigure progress={pax.progress} exiting={pax.exiting} showGauge={showGauge} scale={scale} />
+    </div>
+  );
 }
 
 export interface ElevatorViewportProps {
@@ -99,7 +123,9 @@ export interface ElevatorViewportProps {
   /** Jump the sidebar to the policy tab — wired to the mini rule panel's
    *  "+ ADD RULE" affordance, which is otherwise read-only here. */
   onRequestRuleEdit?: () => void;
-  /** Which car's floor/active-rule the top bar and rule panel track. */
+  /** Which car's floor/active-rule the top bar and rule panel track by
+   *  default, in automatic mode. Manual mode has its own car selector
+   *  (only shown once carCount > 1) that starts pointed at this car too. */
   watchedCarId?: number;
 }
 
@@ -108,12 +134,15 @@ export interface ElevatorViewportProps {
  * frustration gauge" design handoff — chunky bordered panels, hard-offset
  * shadows, and PassengerFigure driving the frustration signal. A level
  * starts here: as soon as one is picked, a shift begins running in real
- * time, always at a fixed 1x pace with no pause — the player edits the
- * policy live, elsewhere in the UI, and changes take effect on the very
- * next simulated tick (see LiveRunController). There is no scrub/replay:
- * once the shift ends, the shaft simply holds on its final frame (the
- * LiveSim stops advancing, so re-reading its state keeps returning the
- * same thing) while the status banner and report explain what happened.
+ * time, always at a fixed 1x pace with no pause. Two control modes,
+ * switchable any time mid-shift: automatic (the player edits a rule
+ * policy elsewhere in the UI, and LiveRunController rebuilds the dispatch
+ * strategy from it every tick) or manual (the player clicks a floor in
+ * the panel to send the car there directly — no rules consulted at all
+ * while this is active). There is no scrub/replay: once the shift ends,
+ * the shaft simply holds on its final frame (the LiveSim stops advancing,
+ * so re-reading its state keeps returning the same thing) while the
+ * status banner and report explain what happened.
  */
 export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watchedCarId = 0 }: ElevatorViewportProps): JSX.Element {
   const liveSimRef = useRef<LiveSim | null>(null);
@@ -122,6 +151,7 @@ export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watched
   const frustrationHistoryRef = useRef<Float32Array[]>([]);
   const lastScannedEventIndexRef = useRef(0);
   const watchedCarEventsRef = useRef<RuleFiredEvent[]>([]);
+  const manualTargetsRef = useRef<Map<CarId, number | null>>(new Map());
 
   const onShiftEndRef = useRef(onShiftEnd);
   useEffect(() => {
@@ -134,8 +164,28 @@ export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watched
   const [finishedStatus, setFinishedStatus] = useState<LiveRunStatus | null>(null);
   const [restartToken, setRestartToken] = useState(0);
   const [soundOn, setSoundOn] = useState(isSoundEnabled());
+  const [mode, setMode] = useState<ControlMode>('auto');
+  const [controlledCarId, setControlledCarId] = useState<CarId>(watchedCarId);
 
   const policy = useEditorStore((s) => s.policy);
+
+  // getDispatch (below) is read fresh every tick from inside the
+  // LiveRunController's closure, which is only rebuilt on level change or
+  // restart — so mode needs a ref mirror to stay current between those
+  // points, the same reason policy edits go through
+  // useEditorStore.getState() instead of a captured variable. (Which car
+  // is "controlled" doesn't need this: the floor-button onClick handlers
+  // already close over the current controlledCarId fresh every render.)
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+
+  function changeMode(next: ControlMode): void {
+    // Nothing carries a manual command across a mode switch in either
+    // direction — a click queued right before flipping back to automatic
+    // shouldn't ambush the player if they flip to manual again later.
+    manualTargetsRef.current.clear();
+    setMode(next);
+  }
 
   // The live shift itself: starts as soon as a level is selected (or
   // re-selected via Restart), and keeps running — including through UI
@@ -147,6 +197,7 @@ export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watched
     liveControllerRef.current = null;
     lastScannedEventIndexRef.current = 0;
     watchedCarEventsRef.current = [];
+    manualTargetsRef.current.clear();
 
     const sim = initLiveSim({
       building: {
@@ -167,11 +218,24 @@ export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watched
     setLiveTick(0);
     setLiveMorale(LIVE_MORALE_MAX);
     setPulsedRuleId(null);
+    setMode('auto');
+    setControlledCarId(watchedCarId);
     useRuleFireStore.getState().setActiveRuleId(null);
+
+    function getDispatch(): DispatchStrategy {
+      if (modeRef.current === 'manual') {
+        return createManualDispatch((carId) => {
+          const target = manualTargetsRef.current.get(carId) ?? null;
+          if (target !== null) manualTargetsRef.current.set(carId, null);
+          return target;
+        });
+      }
+      return createPolicyDispatch(useEditorStore.getState().policy);
+    }
 
     const controller = new LiveRunController({
       sim,
-      getPolicy: () => useEditorStore.getState().policy,
+      getDispatch,
       getSpeed: () => 1,
       getIsPaused: () => false,
       onFrame: (frame, tick) => {
@@ -259,12 +323,15 @@ export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watched
       id: car.id,
       position: car.position,
       doorFraction: liveDoorFraction(car.doorState, car.doorPhaseTicks),
+      targetFloor: car.targetFloor,
       riders: ridersOfCar(sim.state.passengers, car.id, liveTick, frustrationAt),
     }));
   }
 
   const watchedCar = carPoses.find((c) => c.id === watchedCarId) ?? carPoses[0];
   const floorDisplay = watchedCar ? Math.max(0, Math.round(watchedCar.position)) : 0;
+  const controlledCarIndex = carPoses.findIndex((c) => c.id === controlledCarId);
+  const controlledCar = carPoses[controlledCarIndex] ?? carPoses[0];
   const isFailed = finishedStatus === 'failed';
   const isSucceeded = finishedStatus === 'succeeded';
   const runState =
@@ -279,11 +346,19 @@ export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watched
       <div className="shift-screen__topbar">
         <div className="shift-screen__title">{level.name.toUpperCase()}</div>
         <div className="shift-screen__floor-wrap">
-          <DotMatrixDisplay key={floorDisplay} value={String(floorDisplay).padStart(2, '0')} label={`${carLabel(watchedCarId)} · Floor`} />
+          <DotMatrixDisplay key={floorDisplay} value={floorDigits(floorDisplay)} label={`${carLabel(watchedCarId)} · Floor`} />
           <DotMatrixDisplay value={formatTick(liveTick)} label="Shift clock" />
         </div>
         <div className="shift-screen__floor-wrap">
           <span className={`shift-screen__run-state${runStateClass}`}>{runState}</span>
+          <div className="shift-screen__mode-toggle" role="group" aria-label="Control mode">
+            <button type="button" aria-pressed={mode === 'auto'} onClick={() => changeMode('auto')}>
+              AUTO
+            </button>
+            <button type="button" aria-pressed={mode === 'manual'} onClick={() => changeMode('manual')}>
+              MANUAL
+            </button>
+          </div>
           <label>
             <input
               type="checkbox"
@@ -336,11 +411,13 @@ export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watched
               <div className="shift-screen__floor-track">
                 <div style={{ flexShrink: 0, width: carLanesWidth }} />
                 <div className="shift-screen__call-dial">
-                  {scene.showDial && <PassengerFigure progress={scene.worstProgress} showGauge scale={0.85} />}
+                  {scene.showDial && scene.worstDestFloor !== null && (
+                    <FigureWithDest pax={{ progress: scene.worstProgress, exiting: false, destFloor: scene.worstDestFloor }} showGauge scale={0.85} />
+                  )}
                 </div>
                 <div className="shift-screen__wait-area">
                   {scene.waiting.map((pax) => (
-                    <PassengerFigure key={pax.id} progress={pax.progress} exiting={pax.exiting} showGauge={false} scale={0.75} />
+                    <FigureWithDest key={pax.id} pax={pax} showGauge={false} scale={0.75} />
                   ))}
                 </div>
                 <div className="shift-screen__stairs">STAIRS</div>
@@ -367,7 +444,7 @@ export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watched
                 {car.doorFraction > 0.15 && car.riders.length > 0 && (
                   <div className="shift-screen__car-riders">
                     {car.riders.slice(0, 4).map((rider) => (
-                      <PassengerFigure key={rider.id} progress={rider.progress} showGauge={false} scale={0.4} />
+                      <FigureWithDest key={rider.id} pax={rider} showGauge={false} scale={0.4} />
                     ))}
                   </div>
                 )}
@@ -377,23 +454,59 @@ export function ElevatorViewport({ level, onShiftEnd, onRequestRuleEdit, watched
         </div>
 
         <div className="shift-screen__rule-panel">
-          <div className="shift-screen__rule-panel-header">POLICY — TOP DOWN</div>
-          {ruleRows.length === 0 && <p className="shift-screen__rule-note">No rules yet — the car won&rsquo;t move on its own. Add one in the policy tab.</p>}
-          {ruleRows.map((rule) => (
-            <div
-              key={rule.ruleId}
-              className={`shift-screen__rule-row${rule.ruleId === pulsedRuleId ? ' shift-screen__rule-row--fired' : ''}${
-                rule.enabled ? '' : ' shift-screen__rule-row--disabled'
-              }`}
-            >
-              <span className="shift-screen__rule-cond">IF {rule.condText.toUpperCase()}</span>
-              <span className="shift-screen__rule-action">{rule.actionText.toUpperCase()}</span>
-            </div>
-          ))}
-          <button type="button" className="shift-screen__add-rule" onClick={onRequestRuleEdit}>
-            + ADD RULE
-          </button>
-          <div className="shift-screen__rule-note">edit in the policy tab — this panel only shows what just fired.</div>
+          {mode === 'auto' ? (
+            <>
+              <div className="shift-screen__rule-panel-header">POLICY — TOP DOWN</div>
+              {ruleRows.length === 0 && (
+                <p className="shift-screen__rule-note">No rules yet — the car won&rsquo;t move on its own. Add one in the policy tab.</p>
+              )}
+              {ruleRows.map((rule) => (
+                <div
+                  key={rule.ruleId}
+                  className={`shift-screen__rule-row${rule.ruleId === pulsedRuleId ? ' shift-screen__rule-row--fired' : ''}${
+                    rule.enabled ? '' : ' shift-screen__rule-row--disabled'
+                  }`}
+                >
+                  <span className="shift-screen__rule-cond">IF {rule.condText.toUpperCase()}</span>
+                  <span className="shift-screen__rule-action">{rule.actionText.toUpperCase()}</span>
+                </div>
+              ))}
+              <button type="button" className="shift-screen__add-rule" onClick={onRequestRuleEdit}>
+                + ADD RULE
+              </button>
+              <div className="shift-screen__rule-note">edit in the policy tab — this panel only shows what just fired.</div>
+            </>
+          ) : (
+            <>
+              <div className="shift-screen__rule-panel-header">MANUAL CONTROL</div>
+              {level.carCount > 1 && (
+                <div className="shift-screen__car-select" role="group" aria-label="Car to control">
+                  {carPoses.map((car, index) => (
+                    <button key={car.id} type="button" aria-pressed={controlledCarId === car.id} onClick={() => setControlledCarId(car.id)}>
+                      {carLabel(index)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="shift-screen__floor-buttons">
+                {Array.from({ length: level.floors }, (_, i) => level.floors - 1 - i).map((floor) => (
+                  <button
+                    key={floor}
+                    type="button"
+                    className="shift-screen__floor-btn"
+                    aria-pressed={controlledCar?.targetFloor === floor}
+                    onClick={() => manualTargetsRef.current.set(controlledCarId, floor)}
+                  >
+                    {floorDigits(floor)}
+                  </button>
+                ))}
+              </div>
+              <div className="shift-screen__rule-note">
+                click a floor to send {controlledCarIndex >= 0 ? carLabel(controlledCarIndex) : 'the car'} there — rules are paused while manual
+                control is active.
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

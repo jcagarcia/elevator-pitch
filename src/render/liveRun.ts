@@ -1,7 +1,6 @@
 import { computeLiveMorale, LIVE_MORALE_FAIL_THRESHOLD } from '../levels/liveScore';
-import { createPolicyDispatch } from '../policy/ruleEngine';
-import type { DispatchPolicy } from '../policy/types';
 import { TICK_RATE } from '../sim/config';
+import type { DispatchStrategy } from '../sim/dispatch';
 import { isLiveSimFinished, stepLiveSim, type LiveSim } from '../sim/simulate';
 import type { CarFrame, SimEvent } from '../sim/types';
 
@@ -10,8 +9,11 @@ export type LiveRunStatus = 'running' | 'succeeded' | 'failed';
 export interface LiveRunOptions {
   sim: LiveSim;
   /** Read fresh every tick — this is the whole mechanism by which editing
-   *  the policy while the shift is running takes effect immediately. */
-  getPolicy: () => DispatchPolicy;
+   *  the policy (or issuing a manual command) while the shift is running
+   *  takes effect immediately. The caller decides what kind of strategy
+   *  this builds — a rule-based DispatchPolicy or a manual one — this
+   *  controller doesn't know or care which. */
+  getDispatch: () => DispatchStrategy;
   getSpeed: () => number;
   getIsPaused: () => boolean;
   /** Called once per simulated tick with that tick's car frames. */
@@ -27,11 +29,13 @@ export interface LiveRunOptions {
  * Drives a LiveSim forward in real time: a requestAnimationFrame loop that
  * converts elapsed wall-clock time into simulation ticks (scaled by
  * getSpeed()), stepping the sim that many ticks per frame. The dispatch
- * strategy is rebuilt from getPolicy() before every tick, so a rule change
- * lands on the very next tick rather than only on a future re-run.
- * getSpeed/getIsPaused keep the engine itself capable of pause/speed even
- * though the player-facing UI doesn't expose either — the game always
- * calls this with fixed values (1x, never paused).
+ * strategy is rebuilt from getDispatch() before every tick, so a rule
+ * change — or a mode switch between automatic and manual control, or a
+ * newly clicked floor in manual mode — lands on the very next tick rather
+ * than only on a future re-run. getSpeed/getIsPaused keep the engine
+ * itself capable of pause/speed even though the player-facing UI doesn't
+ * expose either — the game always calls this with fixed values (1x, never
+ * paused).
  */
 export class LiveRunController {
   private rafHandle: number | null = null;
@@ -83,7 +87,7 @@ export class LiveRunController {
 
         this.tickAccumulator -= 1;
         ticksThisFrame++;
-        const dispatch = createPolicyDispatch(this.options.getPolicy());
+        const dispatch = this.options.getDispatch();
         const frame = stepLiveSim(this.options.sim, dispatch);
         this.options.onFrame(frame, this.options.sim.state.tick);
 

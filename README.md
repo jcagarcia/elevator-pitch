@@ -1,12 +1,15 @@
 # Elevator Pitch
 
-You are the building's elevator technician. You never touch a button. Your
-job is to tune the dispatch policy — parameters and an ordered list of
-rules — and then watch, in silence, as the elevator does exactly what you
-told it to and the passengers react accordingly. Loudly.
+You are the building's elevator technician. Most of the job is deciding a
+dispatch policy — parameters and an ordered list of rules — and then
+watching, in real time, as the elevator does exactly what you told it to
+and the passengers react accordingly. Loudly. But you can also drop the
+policy entirely and drive: flip to manual and click a floor to send the
+car there yourself.
 
-Run a shift. Read the report. Find out which decision cost you the most.
-Change one thing. Run it again on the same seed. See if it actually helped.
+Watch the shift. Read the report. Find out which decision cost you the
+most. Change one thing. Try again from scratch — every attempt starts
+from the same blank slate, so what worked was actually you.
 
 ## Quick start
 
@@ -35,11 +38,19 @@ npm run lint           # eslint
    There's no "run" button, no pause, and no speed control: this is a
    real-time game, not a simulation you drive.
 2. The car won't move on its own — with zero rules it just sits at floor 0.
-   Build the policy live, elsewhere in the UI, under real passengers: the
-   parameter panel and the rule editor share a single "Policy" tab (drag
-   rules to reorder, or use the ↑/↓ buttons). Changes land on the very next
-   simulated tick, not on some future re-run — watch the elevator react to
-   what you just did, in real time, with nothing to pause or rewind.
+   Two ways to change that, switchable any time mid-shift via the AUTO /
+   MANUAL toggle in the top bar:
+   - **Automatic**: build the policy live, elsewhere in the UI, under real
+     passengers — the parameter panel and the rule editor share a single
+     "Policy" tab (drag rules to reorder, or use the ↑/↓ buttons). Changes
+     land on the very next simulated tick, not on some future re-run.
+   - **Manual**: the mini rule panel becomes a bank of numbered floor
+     buttons, like a real elevator's own control panel. Click one to send
+     the car there — no rules consulted at all while this is active. Every
+     waiting and riding passenger shows a small destination tag, so you
+     always know who's headed where, in either mode.
+   Either way, watch the elevator react to what you just did, in real
+   time, with nothing to pause or rewind.
 3. Watch the morale meter. It's the pressure you're managing: cumulative
    penalty for everyone who's given up and walked to the stairs, plus the
    average frustration of everyone still waiting or riding. If it collapses
@@ -77,7 +88,17 @@ src/
              ruleEngine.ts evaluates a policy's rules top-down and
              implements the same DispatchStrategy interface simulate.ts
              already knows how to call — the sim core has no idea policies
-             exist. presets.ts ships Naive FCFS, SCAN, and LOOK as data.
+             exist. manualDispatch.ts implements the same interface a
+             completely different way: decideNextTarget just hands back
+             whatever floor the player last clicked for that car (a
+             one-shot command, consumed then forgotten) and evaluates no
+             rules at all — this is what manual mode runs on, and
+             LiveRunController can't tell the difference between the two.
+             presets.ts ships Naive FCFS, SCAN, and LOOK as data (used by
+             the rule-engine tests and scripts/check-levels.ts's balance
+             checks) plus BLANK_POLICY — default parameters, zero rules —
+             which is what every level and every restart actually starts
+             from; there's no player-facing way to load a preset.
   levels/    level definitions (fixed seed, traffic spec, star thresholds,
              which catalog entries a level unlocks), the end-of-shift
              composite scoring formula, the worst-moments report generator,
@@ -86,20 +107,23 @@ src/
              "Live mode" below for why it isn't the same formula).
   render/    liveRun.ts's LiveRunController is the one rAF-driven
              controller left — no canvas, no scrub/replay driver. It steps
-             a live sim forward in real time, tick by tick, rebuilding the
-             DispatchStrategy from the current policy before every single
-             tick. getSpeed/getIsPaused keep the engine itself capable of
-             pause/variable speed even though the game always calls it
-             with fixed values (1x, never paused) — the player has no
-             control over either. sceneBuilder.ts turns a passenger roster
-             + a tick into per-floor waiting lists and per-car rider lists
-             — a pure function of (passengers, tick, frustrationAt) — plus
-             frustrationToProgress, the mapping from a passenger's raw
-             frustration number onto PassengerFigure's 0-4 posture scale.
-             ruleHighlight.ts's ruleFiredPulseAt turns a car's rule-fired
-             events into a bounded "still inside its ~0.6s pulse window"
-             check (not a persistent "currently active" flag) for the rule
-             panel.
+             a live sim forward in real time, tick by tick, calling
+             getDispatch() fresh before every single tick — the caller
+             decides what that returns (a rule-based DispatchStrategy or a
+             manual one; see policy/), the controller itself has no
+             concept of "policy" at all. getSpeed/getIsPaused keep the
+             engine itself capable of pause/variable speed even though the
+             game always calls it with fixed values (1x, never paused) —
+             the player has no control over either. sceneBuilder.ts turns
+             a passenger roster + a tick into per-floor waiting lists and
+             per-car rider lists — a pure function of (passengers, tick,
+             frustrationAt) — plus frustrationToProgress, the mapping from
+             a passenger's raw frustration number onto PassengerFigure's
+             0-4 posture scale. ruleHighlight.ts's ruleFiredPulseAt turns a
+             car's rule-fired events into a bounded "still inside its
+             ~0.6s pulse window" check (not a persistent "currently
+             active" flag) for the rule panel — naturally never lights up
+             in manual mode, since manual decisions carry no rule id.
   store/     zustand: current policy draft (editorStore), which rule is
              currently pulsing — shared between the Shift Screen's
              read-only rule panel and the Policy tab's rule editor so both
@@ -117,9 +141,12 @@ src/
              review/scrub data path to keep in sync. Every tick's scene
              (car position/doors, per-floor waiting figures, the rule
              pulse) is derived fresh via sceneBuilder.ts, not accumulated
-             as extra state. Everything else (the merged parameter+rule
-             "Policy" tab, the report) lives in a tabbed sidebar next to
-             it, not stacked above/below it.
+             as extra state. The AUTO/MANUAL toggle just decides what
+             getDispatch() builds each tick (see render/ above); switching
+             modes clears any pending manual command so nothing carries
+             over in either direction. Everything else (the merged
+             parameter+rule "Policy" tab, the report) lives in a tabbed
+             sidebar next to it, not stacked above/below it.
   audio/     a handful of synthesized tones (Web Audio API, no audio
              files), off by default.
 tests/       mirrors src/. Vitest.
@@ -224,17 +251,24 @@ Vitest, mirroring `src/`. Notably:
 - `tests/levels/scoring.test.ts` — composite score monotonicity and bounds.
 - `tests/render/liveRun.test.ts` — `LiveRunController` against a fake rAF
   clock: stays paused when told to, steps roughly `TICK_RATE * speed` ticks
-  per real second, picks up a policy switch on the very next tick, and
-  reports `succeeded`/`failed` at the right moments.
+  per real second, picks up a policy switch on the very next tick, reports
+  `succeeded`/`failed` at the right moments, and drives a hand-rolled
+  manual-style `DispatchStrategy` exactly as well as a policy-based one —
+  the controller genuinely doesn't care which it's given.
 - `tests/levels/liveScore.test.ts` — the live morale formula in isolation.
 - `tests/render/sceneBuilder.test.ts` — frustrationToProgress's band
-  mapping and monotonicity, and buildFloorScenes/ridersOfCar's filtering
+  mapping and monotonicity, buildFloorScenes/ridersOfCar's filtering
   (excludes riding/delivered/not-yet-spawned passengers, keeps a
   just-gave-up passenger as a fading "exiting" entry until its grace window
-  elapses, sorts worst-first).
+  elapses, sorts worst-first), and that both report each passenger's
+  destination floor alongside their frustration.
 - `tests/render/ruleHighlight.test.ts` — ruleFiredPulseAt's pulse window:
   lit while inside it, off once it elapses even with no newer firing, and
   never lights up for a fall-through (null-ruleId) decision.
+- `tests/policy/manualDispatch.test.ts` — createManualDispatch is a thin,
+  stateless pass-through to whatever the caller's consumeTargetFloor
+  returns; the one-shot "ask once, then it's gone" behavior is the
+  caller's responsibility (exercised end-to-end by the liveRun test above).
 
 ## Design notes
 
@@ -260,6 +294,18 @@ what makes per-figure continuous animation like this practical: each
 figure owns its own small rAF loop, keyed by passenger id so reordering
 the (worst-first) waiting list never resets one mid-animation.
 
+Every passenger figure (waiting, on a call dial, or riding) carries a
+small monospace destination-floor tag above its head — cheap to add once
+sceneBuilder.ts already tracks each figure's underlying Passenger, and it
+turns out to matter in both modes, not just manual: it's the same
+information a rule like "capacity-at-least" is implicitly reasoning
+about, just made visible. The manual-mode floor panel reuses the amber
+LED-digit look from the top bar's floor/clock readout (dark well, yellow
+mono digits) rather than inventing a new button style, and lights up
+solid orange — the one shared "this is the current commitment" treatment
+used everywhere else (the fired-rule pulse, the pressed nav tabs) — once
+the car actually commits to that floor.
+
 The Shift Screen is deliberately the loudest part of the app; the sidebar
 (the merged Policy tab, the report) reuses the same tokens — panels,
 buttons, sliders — but stays visually quieter, since it's where the player
@@ -280,9 +326,13 @@ oscillation, which only exists as a peripheral-vision motion-density cue.
   a final one — `npm run check-levels` is there specifically so it's cheap
   to check after changing constants.
 - `directionCommitThreshold` exists in `DispatchParameters` for a stable
-  saved-policy shape but has no consumer yet and so isn't exposed in the
+  policy shape but has no consumer yet and so isn't exposed in the
   parameter panel — a slider with no effect would be worse than no slider.
 - No further level content beyond the seven the brief calls for.
+- Manual mode has no concept of capacity reserve or a minimum door dwell —
+  `createManualDispatch` doesn't implement `effectiveCapacity`/
+  `minDoorDwellTicks`, so a manually-controlled car just uses its full
+  physical capacity and the base dwell time from every stop.
 
 ## Two bugs worth knowing about
 

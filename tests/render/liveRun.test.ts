@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIVE_MORALE_FAIL_THRESHOLD } from '../../src/levels/liveScore';
 import { NAIVE_FCFS_PRESET, SCAN_PRESET } from '../../src/policy/presets';
+import { createPolicyDispatch } from '../../src/policy/ruleEngine';
 import type { DispatchPolicy } from '../../src/policy/types';
 import { LiveRunController } from '../../src/render/liveRun';
 import { TICK_RATE } from '../../src/sim/config';
@@ -63,7 +64,7 @@ describe('LiveRunController', () => {
     let frameCount = 0;
     const controller = new LiveRunController({
       sim: makeSim(1000),
-      getPolicy: () => SCAN_PRESET,
+      getDispatch: () => createPolicyDispatch(SCAN_PRESET),
       getSpeed: () => 1,
       getIsPaused: () => true,
       onFrame: () => frameCount++,
@@ -81,7 +82,7 @@ describe('LiveRunController', () => {
     let frameCount = 0;
     const controller = new LiveRunController({
       sim: makeSim(10_000),
-      getPolicy: () => SCAN_PRESET,
+      getDispatch: () => createPolicyDispatch(SCAN_PRESET),
       getSpeed: () => 2,
       getIsPaused: () => false,
       onFrame: () => frameCount++,
@@ -95,12 +96,12 @@ describe('LiveRunController', () => {
     expect(frameCount).toBeCloseTo(TICK_RATE * 2, 0);
   });
 
-  it('reads getPolicy() fresh every tick, so switching policy mid-run changes behavior on the next tick', () => {
+  it('reads getDispatch() fresh every tick, so switching the underlying policy mid-run changes behavior on the next tick', () => {
     let currentPolicy: DispatchPolicy = BROKEN_POLICY;
     const sim = makeSim(2000);
     const controller = new LiveRunController({
       sim,
-      getPolicy: () => currentPolicy,
+      getDispatch: () => createPolicyDispatch(currentPolicy),
       getSpeed: () => 8,
       getIsPaused: () => false,
       onFrame: () => {},
@@ -124,7 +125,7 @@ describe('LiveRunController', () => {
     const statuses: string[] = [];
     const controller = new LiveRunController({
       sim: makeSim(40),
-      getPolicy: () => NAIVE_FCFS_PRESET,
+      getDispatch: () => createPolicyDispatch(NAIVE_FCFS_PRESET),
       getSpeed: () => 8,
       getIsPaused: () => false,
       onFrame: () => {},
@@ -149,7 +150,7 @@ describe('LiveRunController', () => {
     const moraleReadings: number[] = [];
     const controller = new LiveRunController({
       sim: makeSim(6 * 60 * TICK_RATE),
-      getPolicy: () => BROKEN_POLICY,
+      getDispatch: () => createPolicyDispatch(BROKEN_POLICY),
       getSpeed: () => 8,
       getIsPaused: () => false,
       onFrame: () => {},
@@ -168,5 +169,31 @@ describe('LiveRunController', () => {
     expect(statuses).toEqual(['failed']);
     expect(moraleReadings[moraleReadings.length - 1]).toBeLessThan(LIVE_MORALE_FAIL_THRESHOLD);
     expect(controller.getStatus()).toBe('failed');
+  });
+
+  it('supports a manual dispatch strategy just as well as a policy one', () => {
+    const sim = makeSim(2000);
+    let targetFloor: number | null = 7;
+    const controller = new LiveRunController({
+      sim,
+      getDispatch: () => ({
+        name: 'manual',
+        decideNextTarget: () => {
+          const target = targetFloor;
+          targetFloor = null;
+          return { targetFloor: target, ruleId: null };
+        },
+      }),
+      getSpeed: () => 8,
+      getIsPaused: () => false,
+      onFrame: () => {},
+      onNewEvents: () => {},
+      onMoraleChange: () => {},
+      onStatusChange: () => {},
+    });
+    controller.start();
+    raf.advanceFrame(0);
+    for (let i = 0; i < 20; i++) raf.advanceFrame(250);
+    expect(sim.state.building.cars[0]!.position).toBeCloseTo(7, 0);
   });
 });

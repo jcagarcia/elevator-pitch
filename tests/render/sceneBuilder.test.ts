@@ -64,14 +64,21 @@ describe('buildFloorScenes', () => {
     expect(scenes[0]!.showDial).toBe(false);
   });
 
-  it('sorts waiting passengers worst-first and reports the worst as worstProgress', () => {
+  it('sorts waiting passengers worst-first and reports the worst as worstProgress/worstDestFloor', () => {
     const passengers = [
-      makePax({ id: 0, originFloor: 1, frustration: 5 }),
-      makePax({ id: 1, originFloor: 1, frustration: 50 }),
+      makePax({ id: 0, originFloor: 1, destFloor: 9, frustration: 5 }),
+      makePax({ id: 1, originFloor: 1, destFloor: 4, frustration: 50 }),
     ];
     const scenes = buildFloorScenes(passengers, 3, 0, frustrationAt(passengers));
     expect(scenes[1]!.waiting.map((w) => w.id)).toEqual([1, 0]);
     expect(scenes[1]!.worstProgress).toBeCloseTo(frustrationToProgress(50), 5);
+    expect(scenes[1]!.worstDestFloor).toBe(4);
+  });
+
+  it('reports worstDestFloor as null when there is no dial to anchor it to', () => {
+    const scenes = buildFloorScenes([], 3, 0, () => 0);
+    expect(scenes[1]!.showDial).toBe(false);
+    expect(scenes[1]!.worstDestFloor).toBeNull();
   });
 
   it('excludes riding, delivered, and not-yet-spawned passengers', () => {
@@ -85,9 +92,9 @@ describe('buildFloorScenes', () => {
   });
 
   it('keeps a passenger who just gave up as an exiting entry, worst progress', () => {
-    const passengers = [makePax({ id: 0, originFloor: 1, state: 'gave-up', gaveUpTick: 100, frustration: GIVE_UP_THRESHOLD })];
+    const passengers = [makePax({ id: 0, originFloor: 1, destFloor: 6, state: 'gave-up', gaveUpTick: 100, frustration: GIVE_UP_THRESHOLD })];
     const scenes = buildFloorScenes(passengers, 3, 105, frustrationAt(passengers));
-    expect(scenes[1]!.waiting).toEqual([{ id: 0, progress: 4, exiting: true }]);
+    expect(scenes[1]!.waiting).toEqual([{ id: 0, progress: 4, exiting: true, destFloor: 6 }]);
     // A give-up-only floor has nobody left actually waiting, so no dial.
     expect(scenes[1]!.showDial).toBe(false);
   });
@@ -100,9 +107,9 @@ describe('buildFloorScenes', () => {
 });
 
 describe('ridersOfCar', () => {
-  it('includes only passengers currently riding the given car', () => {
+  it('includes only passengers currently riding the given car, with their destination', () => {
     const passengers = [
-      makePax({ id: 0, originFloor: 0, state: 'riding', carId: 0, boardedTick: 0, frustration: 20 }),
+      makePax({ id: 0, originFloor: 0, destFloor: 8, state: 'riding', carId: 0, boardedTick: 0, frustration: 20 }),
       makePax({ id: 1, originFloor: 0, state: 'riding', carId: 1, boardedTick: 0 }),
       makePax({ id: 2, originFloor: 0, state: 'delivered', carId: 0, boardedTick: 0, deliveredTick: 1 }),
     ];
@@ -110,5 +117,6 @@ describe('ridersOfCar', () => {
     const riders = ridersOfCar(passengers, 0, 5, frustrationAt);
     expect(riders.map((r) => r.id)).toEqual([0]);
     expect(riders[0]!.progress).toBeCloseTo(frustrationToProgress(20), 5);
+    expect(riders[0]!.destFloor).toBe(8);
   });
 });
