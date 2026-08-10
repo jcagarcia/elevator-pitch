@@ -60,53 +60,93 @@ export interface SimResult {
 }
 
 /**
- * Runs an entire shift synchronously and returns the full result — frame by
- * frame car state plus the discrete event log. Playback (play/pause/speed/
- * scrub) is purely a matter of moving a playhead through this precomputed
- * result; nothing about the sim couples to wall-clock time, which is what
- * makes reruns on an unchanged policy byte-identical.
+ * A shift in progress: the mutable SimState plus the pre-generated
+ * passenger roster and how far into it we've spawned. state.tick is the
+ * single source of truth for "what tick are we at" — spawning and stepping
+ * both read/advance it, so there's exactly one place that owns it.
  */
-export function runShift(config: ShiftConfig): SimResult {
+export interface LiveSim {
+  readonly state: SimState;
+  readonly roster: readonly Passenger[];
+  rosterIndex: number;
+  readonly durationTicks: number;
+}
+
+/** Sets up a shift without running any of it — the roster (who spawns
+ *  when, wanting what) is generated up front from the seed, same as batch
+ *  mode, since passenger arrivals stay deterministic even when the dispatch
+ *  policy driving stepLiveSim doesn't. */
+export function initLiveSim(config: Omit<ShiftConfig, 'dispatch'>): LiveSim {
   const rng = createRng(config.seed);
   const building = createBuilding(config.building);
   const roster = generatePassengers(rng, config.passengerGenSpec, config.building.floors, config.durationTicks);
-
-  const state: SimState = {
-    tick: 0,
-    building,
-    passengers: [],
-    events: [],
-    claimedCalls: new Map(),
+  return {
+    state: { tick: 0, building, passengers: [], events: [], claimedCalls: new Map() },
+    roster,
+    rosterIndex: 0,
+    durationTicks: config.durationTicks,
   };
+}
 
+export function isLiveSimFinished(sim: LiveSim): boolean {
+  return sim.state.tick >= sim.durationTicks;
+}
+
+/**
+ * Advances a LiveSim by exactly one tick using whichever dispatch strategy
+ * is passed in for *this* call — nothing requires it to be the same
+ * strategy from one call to the next. That's the seam live play depends
+ * on: rebuild a DispatchStrategy from the current policy every tick (or
+ * every animation frame) and edits take effect on the very next tick,
+ * rather than only on the next full run. Returns this tick's car frames
+ * for convenience.
+ */
+export function stepLiveSim(sim: LiveSim, dispatch: DispatchStrategy): CarFrame[] {
+  const { state, roster } = sim;
+  const tick = state.tick;
+
+  while (sim.rosterIndex < roster.length) {
+    const passenger = roster[sim.rosterIndex];
+    if (!passenger || passenger.spawnTick !== tick) break;
+    state.passengers.push(passenger);
+    state.events.push({ type: 'spawn', tick, passengerId: passenger.id, floor: passenger.originFloor });
+    sim.rosterIndex++;
+  }
+
+  stepTick(state, dispatch);
+  state.tick = tick + 1;
+
+  return state.building.cars.map(captureFrame);
+}
+
+/**
+ * Runs an entire shift synchronously against one fixed dispatch strategy
+ * and returns the full result — frame by frame car state plus the discrete
+ * event log. Playback (play/pause/speed/scrub) is purely a matter of
+ * moving a playhead through this precomputed result; nothing about the sim
+ * couples to wall-clock time, which is what makes reruns on an unchanged
+ * policy byte-identical. (Live play, where the policy itself can change
+ * mid-shift, steps a LiveSim directly instead — see stepLiveSim.)
+ */
+export function runShift(config: ShiftConfig): SimResult {
+  const sim = initLiveSim(config);
   const frames: CarFrame[][] = [];
-  const frustrationHistory: Float32Array[] = roster.map(() => new Float32Array(config.durationTicks));
-  let rosterIndex = 0;
+  const frustrationHistory: Float32Array[] = sim.roster.map(() => new Float32Array(config.durationTicks));
 
-  for (let tick = 0; tick < config.durationTicks; tick++) {
-    state.tick = tick;
-
-    while (rosterIndex < roster.length) {
-      const passenger = roster[rosterIndex];
-      if (!passenger || passenger.spawnTick !== tick) break;
-      state.passengers.push(passenger);
-      state.events.push({ type: 'spawn', tick, passengerId: passenger.id, floor: passenger.originFloor });
-      rosterIndex++;
-    }
-
-    stepTick(state, config.dispatch);
-
-    frames.push(state.building.cars.map(captureFrame));
-    for (const passenger of state.passengers) {
+  while (!isLiveSimFinished(sim)) {
+    const tick = sim.state.tick;
+    const frame = stepLiveSim(sim, config.dispatch);
+    frames.push(frame);
+    for (const passenger of sim.state.passengers) {
       frustrationHistory[passenger.id]![tick] = passenger.frustration;
     }
   }
 
   return {
     frames,
-    events: state.events,
-    passengers: state.passengers,
-    score: computeScore(state),
+    events: sim.state.events,
+    passengers: sim.state.passengers,
+    score: computeScore(sim.state),
     frustrationHistory,
   };
 }
@@ -335,7 +375,10 @@ function findPassenger(state: SimState, id: number): Passenger | undefined {
   return state.passengers.find((p) => p.id === id);
 }
 
-function computeScore(state: SimState): ShiftScore {
+/** Works equally well on a finished shift or one still in progress — score
+ *  is always just a summary of whatever's in state.passengers right now,
+ *  which is what lets live play show a running score. */
+export function computeScore(state: SimState): ShiftScore {
   let delivered = 0;
   let gaveUp = 0;
   let totalWait = 0;

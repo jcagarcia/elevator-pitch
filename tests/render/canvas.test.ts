@@ -12,4 +12,11 @@ describe('computeGeometry', () => {
     const geometry = computeGeometry(1000, 500, 10, 1);
     expect(geometry.shaftWidth).toBeLessThan(geometry.width);
   });
+
+  it('orders the hallway and stairwell lanes left to right without overlap', () => {
+    const geometry = computeGeometry(1000, 500, 10, 1);
+    expect(geometry.hallwayX).toBe(geometry.shaftWidth);
+    expect(geometry.stairwellX).toBeGreaterThan(geometry.hallwayX);
+    expect(geometry.stairwellX).toBeLessThan(geometry.width);
+  });
 });

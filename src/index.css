@@ -485,6 +485,66 @@ label {
   margin: 0;
 }
 
+.viewport__morale {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.viewport__morale-label {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.7rem;
+}
+
+.viewport__morale-track {
+  flex: 1;
+  height: 0.6rem;
+  background: var(--panel-bg-recessed);
+  border: 1px solid var(--panel-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.viewport__morale-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent-safe);
+  transition: width 0.2s linear;
+}
+
+.viewport__morale-fill--danger {
+  background: var(--accent-danger);
+}
+
+.viewport__morale-value {
+  font-family: var(--font-mono);
+  min-width: 2.5em;
+  text-align: right;
+}
+
+.viewport__status {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 2px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.viewport__status--failed {
+  background: rgba(208, 71, 59, 0.18);
+  border: 1px solid var(--accent-danger);
+  color: #f3b8b1;
+}
+
+.viewport__status--succeeded {
+  background: rgba(106, 156, 92, 0.18);
+  border: 1px solid var(--accent-safe);
+  color: #cfe8c4;
+}
+
 /* -------------------------------------------------------------------- */
 /* Rule editor — live-fired rule reads as a lit indicator                */
 /* -------------------------------------------------------------------- */

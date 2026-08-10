@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { naiveFcfsDispatch } from '../../src/sim/dispatch';
-import { runShift, type ShiftConfig } from '../../src/sim/simulate';
+import { computeScore, initLiveSim, isLiveSimFinished, runShift, stepLiveSim, type ShiftConfig } from '../../src/sim/simulate';
 import { TICK_RATE } from '../../src/sim/config';
 
 function makeConfig(overrides: Partial<ShiftConfig> = {}): ShiftConfig {
@@ -33,6 +33,46 @@ describe('runShift determinism', () => {
     const resultB = runShift(makeConfig({ seed: 43 }));
 
     expect(JSON.stringify(resultA)).not.toBe(JSON.stringify(resultB));
+  });
+});
+
+describe('stepLiveSim / runShift equivalence', () => {
+  it('stepping a LiveSim tick by tick with a fixed dispatch produces the exact same result as runShift', () => {
+    const config = makeConfig();
+    const batch = runShift(config);
+
+    const { dispatch, ...liveConfig } = config;
+    const sim = initLiveSim(liveConfig);
+    const frames = [];
+    while (!isLiveSimFinished(sim)) {
+      frames.push(stepLiveSim(sim, dispatch));
+    }
+
+    expect(frames).toEqual(batch.frames);
+    expect(sim.state.events).toEqual(batch.events);
+    expect(sim.state.passengers).toEqual(batch.passengers);
+    expect(computeScore(sim.state)).toEqual(batch.score);
+  });
+
+  it('isLiveSimFinished is false until durationTicks ticks have run, then true', () => {
+    const { dispatch, ...liveConfig } = makeConfig({ durationTicks: 50 });
+    const sim = initLiveSim(liveConfig);
+    for (let i = 0; i < 50; i++) {
+      expect(isLiveSimFinished(sim)).toBe(false);
+      stepLiveSim(sim, dispatch);
+    }
+    expect(isLiveSimFinished(sim)).toBe(true);
+  });
+
+  it('computeScore works on a sim that is only partway through (live scoring use case)', () => {
+    const { dispatch, ...liveConfig } = makeConfig();
+    const sim = initLiveSim(liveConfig);
+    for (let i = 0; i < 100; i++) stepLiveSim(sim, dispatch);
+
+    const partial = computeScore(sim.state);
+    // Nobody could have given up or been delivered yet after only 5s.
+    expect(partial.gaveUp).toBe(0);
+    expect(partial.spawned).toBeGreaterThanOrEqual(0);
   });
 });
 

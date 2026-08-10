@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
 import { cumulativeUnlocksThrough, getLevel, isLevelUnlocked, LEVELS } from './levels';
-import { runLevel } from './levels/runLevel';
 import { computeCompositeScore, computeStars, type StarRating } from './levels/scoring';
-import { createPolicyDispatch } from './policy/ruleEngine';
+import { SCAN_PRESET } from './policy/presets';
 import type { SimResult } from './sim/simulate';
 import { useEditorStore } from './store/editorStore';
 import { useProgressStore } from './store/progressStore';
@@ -37,19 +36,24 @@ export function App(): JSX.Element {
 
   function selectLevel(levelId: string): void {
     if (!isLevelUnlocked(levelId, levelProgress)) return;
+    // Every level starts from the same known-good baseline, running
+    // immediately — the player edits it live rather than pressing a
+    // separate "run" button first. Restarting the *same* level (via the
+    // viewport's own Restart control) intentionally keeps whatever policy
+    // the player has already edited instead of resetting it.
+    useEditorStore.getState().loadPreset(SCAN_PRESET);
     setSelectedLevelId(levelId);
     setResult(null);
     setActiveTab('parameters');
   }
 
-  function runShiftWithCurrentPolicy(): void {
-    const policy = useEditorStore.getState().policy;
-    const shiftResult = runLevel(level, createPolicyDispatch(policy));
+  function handleShiftEnd(shiftResult: SimResult, status: 'succeeded' | 'failed'): void {
     setResult(shiftResult);
-
-    const composite = computeCompositeScore(shiftResult.score);
-    const stars = computeStars(composite, level.starThresholds);
-    useProgressStore.getState().recordLevelResult(level.id, stars, composite);
+    if (status === 'succeeded') {
+      const composite = computeCompositeScore(shiftResult.score);
+      const stars = computeStars(composite, level.starThresholds);
+      useProgressStore.getState().recordLevelResult(level.id, stars, composite);
+    }
     setActiveTab('report');
   }
 
@@ -87,7 +91,7 @@ export function App(): JSX.Element {
             <h2>{level.name}</h2>
             <p>{level.briefing}</p>
           </article>
-          <ElevatorViewport floors={level.floors} carCount={level.carCount} result={result} onRunShift={runShiftWithCurrentPolicy} />
+          <ElevatorViewport level={level} onShiftEnd={handleShiftEnd} />
         </section>
 
         <aside className="sidebar" aria-label="Policy editor">

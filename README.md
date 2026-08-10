@@ -30,18 +30,29 @@ npm run lint           # eslint
 
 1. Pick a level. Each one is a fixed building, a fixed seeded traffic
    pattern, and a duration — read the briefing, it tells you what's about
-   to happen.
-2. Load a preset (Naive FCFS, SCAN, or LOOK) or start from scratch. Adjust
-   the parameters (lookahead distance, capacity reserve, door dwell, idle
-   parking, reverse-direction pickup) and the rule list (drag to reorder,
-   or use the ↑/↓ buttons — both work identically).
-3. **Run shift.** The whole shift computes instantly; playback is just a
-   scrub through the result, so pause/scrub/rewind are free and the live
-   "which rule fired" highlight in the rule list is exact, not a guess.
-4. Read the report: composite score, stars, and a ranked list of worst
+   to happen. The level starts immediately, loaded with the SCAN preset and
+   running live — there's no separate "run" button.
+2. While it's running, edit the policy: load a different preset (Naive
+   FCFS, SCAN, LOOK) or adjust it from scratch — parameters (lookahead
+   distance, capacity reserve, door dwell, idle parking, reverse-direction
+   pickup) and the rule list (drag to reorder, or the ↑/↓ buttons). Changes
+   land on the very next simulated tick, not on some future re-run — watch
+   the elevator react to what you just did.
+3. Watch the morale meter. It's the pressure you're managing: cumulative
+   penalty for everyone who's given up and walked to the stairs, plus the
+   average frustration of everyone still waiting or riding. If it collapses
+   below the failure threshold, the shift ends early — "service
+   interrupted" — and the stairwell fills with the people you lost.
+4. If the shift instead runs its full duration, it ends successfully and
+   the viewport switches into a review phase: the same canvas, now
+   scrubbable start to finish, with the live "which rule fired" highlight
+   in the rule list exact for any point you scrub to (not a guess).
+5. Read the report: composite score, stars, and a ranked list of worst
    moments. Click one to jump the playhead straight to it.
-5. Change one thing. Run it again on the same seed. The result is
-   byte-identical unless the policy changed — this is the whole point.
+6. **Restart shift** to try again on the same level with whatever policy
+   you currently have loaded (picking a *different* level instead resets to
+   the SCAN baseline — see "Live mode" below for why re-runs on an edited
+   live policy aren't byte-identical the way a fixed batch run is).
 
 ## Architecture
 
@@ -51,8 +62,12 @@ src/
              Runnable and testable in plain Node. Building/car/passenger
              types, kinematic physics, the door state machine, the
              frustration model (every constant named and commented in
-             config.ts), and runShift(), which computes an entire shift
-             synchronously into an immutable SimResult.
+             config.ts). simulate.ts exposes both layers on top of that:
+             the steppable primitives (initLiveSim/stepLiveSim/
+             isLiveSimFinished — advance exactly one tick against whatever
+             DispatchStrategy is passed *that call*) and runShift(), a thin
+             loop over those primitives that runs an entire shift against
+             one fixed strategy synchronously into an immutable SimResult.
   policy/    the rule engine. DispatchPolicy = parameters + an ordered list
              of Rules (AND-combined conditions -> one action). catalog.ts
              is the registry of condition/action implementations;
@@ -61,25 +76,42 @@ src/
              already knows how to call — the sim core has no idea policies
              exist. presets.ts ships Naive FCFS, SCAN, and LOOK as data.
   levels/    level definitions (fixed seed, traffic spec, star thresholds,
-             which catalog entries a level unlocks), the composite scoring
-             formula, and the worst-moments report generator.
-  render/    canvas drawing and the playback driver. Imperative, driven by
-             its own requestAnimationFrame loop — the simulation is never
-             re-rendered through React state per tick.
-  store/     zustand: current policy draft (editorStore), playback state
-             (playbackStore), saved policies + level progress, persisted to
-             localStorage (progressStore).
+             which catalog entries a level unlocks), the end-of-shift
+             composite scoring formula, the worst-moments report generator,
+             and liveScore.ts's computeLiveMorale — a deliberately
+             different, streaming-friendly metric for the live HUD (see
+             "Live mode" below for why it isn't the same formula).
+  render/    canvas drawing plus two independent rAF-driven controllers.
+             playback.ts's PlaybackDriver scrubs an already-computed
+             SimResult (review phase, and the old batch flow). liveRun.ts's
+             LiveRunController instead steps a live sim forward in real
+             time, tick by tick, rebuilding the DispatchStrategy from the
+             current policy before every single tick. stairwellAnimator.ts
+             is a small wall-clock-driven (not sim-tick-driven) tracker for
+             the "walking to the stairs" dots — cosmetic only, never read
+             by the simulation. Nothing here re-renders the simulation
+             through React state per tick.
+  store/     zustand: current policy draft (editorStore), playback/live-run
+             transport state — play/pause, speed, current tick, active-rule
+             highlight (playbackStore, shared by both phases), saved
+             policies + level progress persisted to localStorage
+             (progressStore).
   ui/        React. ui/viewport/ElevatorViewport is the main game surface —
              a responsive canvas (resizes with the window via
-             ResizeObserver) showing the building, idle before the first
-             run and fully played back after. Everything else (parameter
-             panel, rule editor, saved policies, report) lives in a tabbed
-             sidebar next to it, not stacked above/below it.
+             ResizeObserver) that owns a live/review phase switch: a level
+             starts it running live immediately, and it flips to review
+             once the shift ends (success or failure) so the finished
+             result can be scrubbed. Everything else (parameter panel, rule
+             editor, saved policies, report) lives in a tabbed sidebar next
+             to it, not stacked above/below it.
   audio/     a handful of synthesized tones (Web Audio API, no audio
              files), off by default.
 tests/       mirrors src/. Vitest.
-scripts/     dump-run.ts (text dump of a shift) and check-levels.ts (preset
-             scores across every level) — dev tools, not part of the app.
+scripts/     dump-run.ts (text dump of a shift), check-levels.ts (preset
+             scores across every level), and check-live-morale.ts (tunes/
+             verifies the live morale constants — how long a good, a
+             mediocre, and a deliberately broken policy each survive) — dev
+             tools, not part of the app.
 ```
 
 The dependency direction is strict: `sim` knows nothing above it; `policy`
@@ -93,11 +125,35 @@ the sim loop.
 
 `runShift(config)` is a pure function of its input: a seed, a building, a
 passenger generator spec, and a dispatch strategy. Nothing in `src/sim` or
-`src/policy` reads `Date.now()`, `Math.random()`, or the DOM. Playback
-doesn't run the simulation again — it's a scrub through the one array of
-frames and events `runShift` already produced. `tests/sim/simulate.test.ts`
-asserts this directly: the same seed and policy, run twice, produce a
-byte-identical serialized result.
+`src/policy` reads `Date.now()`, `Math.random()`, or the DOM. Review-phase
+playback doesn't run the simulation again — it's a scrub through the one
+array of frames and events the finished shift already produced.
+`tests/sim/simulate.test.ts` asserts this directly: the same seed and
+policy, run twice through `runShift`, produce a byte-identical serialized
+result — and separately, that stepping a `LiveSim` one tick at a time via
+`stepLiveSim` produces exactly the same frames as `runShift` did, tick for
+tick, when driven by the same fixed strategy throughout.
+
+### Live mode
+
+The passenger roster (who spawns when, wanting what) is generated up front
+from the seed and stays fixed for the whole shift — that part is still
+deterministic. What isn't: while a shift is live, `LiveRunController`
+rebuilds the `DispatchStrategy` from whatever policy is currently loaded
+before *every tick* (see `src/render/liveRun.ts`), so if the player edits a
+parameter or reorders a rule mid-shift, the outcome from that point on
+depends on the real-time sequence of edits — not just the seed and a fixed
+policy. Re-running the same level with the same policy and never touching
+it during the run is still byte-identical to a `runShift` batch call (this
+is exactly what the equivalence tests above check); it's live editing
+specifically, the whole point of the mode, that trades that guarantee away.
+The live morale score (`computeLiveMorale`) is deliberately a different
+formula from the end-of-shift composite score, too — a ratio-based score is
+misleading on the tiny, early sample a live HUD has to work with (0
+delivered of 1 spawned reads as a disaster that isn't one), so the live
+metric instead tracks a permanent penalty for each passenger who's given up
+plus the average frustration of whoever's still active — see
+`scripts/check-live-morale.ts` for how the constants were tuned.
 
 ## The anger model
 
@@ -152,6 +208,13 @@ Vitest, mirroring `src/`. Notably:
   during the invisible window, visible during the duty cycle, and reachable
   through the timeout override regardless.
 - `tests/levels/scoring.test.ts` — composite score monotonicity and bounds.
+- `tests/render/liveRun.test.ts` — `LiveRunController` against a fake rAF
+  clock: stays paused when told to, steps roughly `TICK_RATE * speed` ticks
+  per real second, picks up a policy switch on the very next tick, and
+  reports `succeeded`/`failed` at the right moments.
+- `tests/levels/liveScore.test.ts` — the live morale formula in isolation.
+- `tests/render/stairwellAnimator.test.ts` — walker lifecycle (added on
+  gave-up, progresses, pruned once its walk duration elapses).
 
 ## Design notes
 

@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
     "dump-run": "tsx scripts/dump-run.ts",
-    "check-levels": "tsx scripts/check-levels.ts"
+    "check-levels": "tsx scripts/check-levels.ts",
+    "check-live-morale": "tsx scripts/check-live-morale.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
