@@ -62,6 +62,7 @@ export function generatePassengers(
       carId: null,
       boardedTick: null,
       deliveredTick: null,
+      gaveUpTick: null,
       stalledTicks: 0,
     });
   }

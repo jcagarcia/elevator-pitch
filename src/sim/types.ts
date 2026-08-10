@@ -41,15 +41,36 @@ export interface Passenger {
   state: PassengerState;
   frustration: number;
   frustrationBySource: FrustrationBySource;
+  /** Car the passenger boarded (or is riding). Kept set after delivery too —
+   *  it's the historical record used to reconstruct which car to render them
+   *  in for any tick in [boardedTick, deliveredTick) during playback. */
   carId: CarId | null;
   boardedTick: number | null;
   deliveredTick: number | null;
+  gaveUpTick: number | null;
   /** Consecutive ticks this passenger's car has sat idle with doors closed. */
   stalledTicks: number;
 }
 
 export function passengerDirection(p: Passenger): 'up' | 'down' {
   return p.destFloor > p.originFloor ? 'up' : 'down';
+}
+
+/** Derives a passenger's status at an arbitrary past tick from their final
+ *  record — cheap enough that the renderer can call it every frame instead
+ *  of needing a full per-tick position history. Only frustration (which
+ *  accrues unpredictably tick to tick) needs its own recorded history; see
+ *  SimResult.frustrationHistory. */
+export type PassengerRenderState = 'not-spawned' | 'waiting' | 'riding' | 'delivered' | 'gave-up';
+
+export function passengerStateAtTick(p: Passenger, tick: number): PassengerRenderState {
+  if (tick < p.spawnTick) return 'not-spawned';
+  if (p.boardedTick !== null && tick >= p.boardedTick) {
+    if (p.deliveredTick !== null && tick >= p.deliveredTick) return 'delivered';
+    return 'riding';
+  }
+  if (p.gaveUpTick !== null && tick >= p.gaveUpTick) return 'gave-up';
+  return 'waiting';
 }
 
 export type Direction = 'up' | 'down' | 'idle';
@@ -72,8 +93,6 @@ export interface Car {
   passengers: PassengerId[];
   /** Next floor the car is heading to, chosen by the dispatch policy. Null = no target, car is idle. */
   targetFloor: number | null;
-  /** Floors already visited/handled as part of reaching targetFloor, used to detect passed-by events. */
-  lastFloorPassed: number;
 }
 
 export interface Building {

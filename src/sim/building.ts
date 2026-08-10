@@ -24,7 +24,6 @@ export function createBuilding(spec: BuildingSpec): Building {
       requiredDwellTicks: 0,
       passengers: [],
       targetFloor: null,
-      lastFloorPassed: startFloor,
     });
   }
   return { floors: spec.floors, cars };

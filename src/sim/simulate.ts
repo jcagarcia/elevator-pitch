@@ -46,6 +46,17 @@ export interface SimResult {
   events: SimState['events'];
   passengers: Passenger[];
   score: ShiftScore;
+  /**
+   * Cumulative frustration per passenger per tick, indexed
+   * frustrationHistory[passengerId][tick]. Only frustration needs this
+   * treatment for playback/scrubbing — a passenger's floor/car at any tick
+   * is cheap to derive from their final record (see passengerStateAtTick),
+   * but frustration accrues unpredictably tick to tick depending on live
+   * car state, so there's no shortcut around recording it. Sized as
+   * Float32Array per passenger to keep a multi-thousand-tick shift with a
+   * large roster in the single-digit megabytes.
+   */
+  frustrationHistory: Float32Array[];
 }
 
 /**
@@ -69,6 +80,7 @@ export function runShift(config: ShiftConfig): SimResult {
   };
 
   const frames: CarFrame[][] = [];
+  const frustrationHistory: Float32Array[] = roster.map(() => new Float32Array(config.durationTicks));
   let rosterIndex = 0;
 
   for (let tick = 0; tick < config.durationTicks; tick++) {
@@ -85,6 +97,9 @@ export function runShift(config: ShiftConfig): SimResult {
     stepTick(state, config.dispatch);
 
     frames.push(state.building.cars.map(captureFrame));
+    for (const passenger of state.passengers) {
+      frustrationHistory[passenger.id]![tick] = passenger.frustration;
+    }
   }
 
   return {
@@ -92,6 +107,7 @@ export function runShift(config: ShiftConfig): SimResult {
     events: state.events,
     passengers: state.passengers,
     score: computeScore(state),
+    frustrationHistory,
   };
 }
 
@@ -203,7 +219,6 @@ function resolveStop(state: SimState, car: Car): number {
     if (passenger.destFloor === floor) {
       passenger.state = 'delivered';
       passenger.deliveredTick = state.tick;
-      passenger.carId = null;
       state.events.push({ type: 'alight', tick: state.tick, passengerId: passenger.id, carId: car.id, floor });
       state.events.push({ type: 'delivered', tick: state.tick, passengerId: passenger.id, carId: car.id, floor });
       dwellTicksNeeded += boardAlightTicksFor(passenger);
@@ -272,6 +287,7 @@ function applyFrustration(state: SimState): void {
       applyFrustrationToPassenger(passenger, 'hallWait', hallWaitDelta(ticksWaited));
       if (frustrationState(passenger.frustration) === 'gave-up') {
         passenger.state = 'gave-up';
+        passenger.gaveUpTick = state.tick;
         state.events.push({ type: 'gave-up', tick: state.tick, passengerId: passenger.id, floor: passenger.originFloor });
       }
       continue;
