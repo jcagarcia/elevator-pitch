@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
-    "dump-run": "tsx scripts/dump-run.ts"
+    "dump-run": "tsx scripts/dump-run.ts",
+    "check-levels": "tsx scripts/check-levels.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

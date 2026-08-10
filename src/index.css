@@ -1,16 +1,470 @@
 /*
- * Placeholder styling only — Phase 6 replaces this with the real control-
- * panel visual design. For now this exists so the two things that are
- * functionally meaningless without *some* visual treatment (the live rule
- * highlight, and reordering feedback) are actually visible, not just
- * present in the DOM.
+ * Elevator Pitch — visual design.
+ *
+ * Direction: a service panel installed in a building sometime in the 90s
+ * and never replaced. Worn brushed metal, riveted panel edges, warning-tag
+ * amber, everything in a monospace "manual" voice. One signature element —
+ * the dot-matrix floor/clock readout (.dot-matrix) — carries all the
+ * boldness; every other panel stays deliberately quiet and utilitarian so
+ * the instrument reads as an instrument.
  */
 
-[data-active='true'] {
-  outline: 3px solid #2f8f3f;
-  background: #eafbea;
+:root {
+  --panel-bg: #3a352e;
+  --panel-bg-recessed: #24211c;
+  --panel-bg-raised: #45402f;
+  --panel-border: #5c554a;
+  --panel-rivet: #726a5a;
+  --text-primary: #ece6d6;
+  --text-muted: #b5ab97;
+  --accent-amber: #e0a83f;
+  --accent-amber-dim: #8a6b28;
+  --accent-danger: #d0473b;
+  --accent-safe: #6a9c5c;
+  --focus-ring: #ffd873;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;
+  --hit-target: 2.5rem;
 }
 
-[data-drag-over='true'] {
-  outline: 2px dashed #3f6fa8;
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--panel-bg-recessed);
+  background-image: repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.08) 0px, rgba(0, 0, 0, 0.08) 1px, transparent 1px, transparent 3px);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+main {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* -------------------------------------------------------------------- */
+/* Headings — stamped nameplate treatment                               */
+/* -------------------------------------------------------------------- */
+
+h1 {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-left: 6px solid var(--accent-amber);
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-amber);
+}
+
+h3 {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------------------- */
+/* Panels — every section/article/fieldset reads as a riveted enclosure  */
+/* -------------------------------------------------------------------- */
+
+section,
+article {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  padding: 1rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+article[aria-label='Level briefing'] {
+  background: #e9e2c9;
+  color: #2b2718;
+  border-color: #b9ad84;
+  font-style: normal;
+}
+
+article[aria-label='Level briefing'] h2 {
+  color: #6b4f14;
+}
+
+fieldset {
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  background: var(--panel-bg-recessed);
+  margin: 0 0 0.75rem;
+  padding: 0.75rem 0.9rem 0.9rem;
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+legend {
+  padding: 0.1rem 0.5rem;
+  background: var(--panel-rivet);
+  color: var(--panel-bg-recessed);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  font-weight: 700;
+}
+
+fieldset p {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* -------------------------------------------------------------------- */
+/* Level select — physical tab bank                                     */
+/* -------------------------------------------------------------------- */
+
+nav[aria-label='Level select'] ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* -------------------------------------------------------------------- */
+/* Buttons — chunky tactile switches                                    */
+/* -------------------------------------------------------------------- */
+
+button {
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  background: var(--panel-bg-raised);
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  padding: 0.45rem 0.75rem;
+  min-height: var(--hit-target);
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 2px 0 rgba(0, 0, 0, 0.35);
+  transition: transform 60ms ease, box-shadow 60ms ease;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent-amber-dim);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button[aria-pressed='true'] {
+  /* Full-strength amber, not the dim variant — dim amber under dark text
+     only reaches ~3.9:1, short of WCAG AA's 4.5:1 for normal-size text. */
+  background: var(--accent-amber);
+  border-color: var(--accent-amber);
+  color: #120d04;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+/* -------------------------------------------------------------------- */
+/* Checkboxes — toggle switches                                         */
+/* -------------------------------------------------------------------- */
+
+input[type='checkbox'] {
+  appearance: none;
+  width: 2.4rem;
+  height: 1.3rem;
+  background: var(--panel-bg-recessed);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  position: relative;
+  vertical-align: middle;
+  margin: 0 0.5rem;
+  cursor: pointer;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+}
+
+input[type='checkbox']::before {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 100ms ease, background 100ms ease;
+}
+
+input[type='checkbox']:checked {
+  border-color: var(--accent-amber);
+}
+
+input[type='checkbox']:checked::before {
+  transform: translateX(1.05rem);
+  background: var(--accent-amber);
+}
+
+/* -------------------------------------------------------------------- */
+/* Range sliders                                                        */
+/* -------------------------------------------------------------------- */
+
+input[type='range'] {
+  appearance: none;
+  width: 100%;
+  min-width: 8rem;
+  height: 1.4rem;
+  background: transparent;
+  margin: 0.3rem 0;
+  vertical-align: middle;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--panel-border);
+  border-radius: 2px;
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  background: var(--panel-border);
+  border-radius: 2px;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-top: -0.45rem;
+  border-radius: 3px;
+  background: var(--accent-amber);
+  border: 1px solid var(--accent-amber-dim);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 3px;
+  background: var(--accent-amber);
+  border: 1px solid var(--accent-amber-dim);
+  cursor: pointer;
+}
+
+/* -------------------------------------------------------------------- */
+/* Text/number inputs and selects                                       */
+/* -------------------------------------------------------------------- */
+
+input[type='text'],
+input[type='number'],
+select {
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  background: var(--panel-bg-recessed);
+  border: 1px solid var(--panel-border);
+  border-radius: 2px;
+  padding: 0.3rem 0.4rem;
+  min-height: 2rem;
+}
+
+input[type='number'] {
+  width: 5rem;
+}
+
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.2rem 0.6rem 0.2rem 0;
+}
+
+/* -------------------------------------------------------------------- */
+/* The signature element: dot-matrix readout                            */
+/* -------------------------------------------------------------------- */
+
+.dot-matrix {
+  display: inline-block;
+  background: #0c0a06;
+  border: 2px solid #17140d;
+  border-radius: 3px;
+  padding: 0.35rem 0.7rem;
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.8);
+}
+
+.dot-matrix__value {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--accent-amber);
+  text-shadow: 0 0 6px rgba(224, 168, 63, 0.75), 0 0 1px rgba(224, 168, 63, 0.9);
+}
+
+.run-view__instruments {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.run-view canvas {
+  display: block;
+  max-width: 100%;
+  border: 3px solid var(--panel-rivet);
+  border-radius: 2px;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6);
+}
+
+.run-view__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.run-view__controls label {
+  flex: 1 1 12rem;
+}
+
+.run-view__controls input[type='range'] {
+  flex: 1;
+}
+
+/* -------------------------------------------------------------------- */
+/* Rule editor — live-fired rule reads as a lit indicator                */
+/* -------------------------------------------------------------------- */
+
+section[aria-label='Dispatch rules'] > ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+section[aria-label='Dispatch rules'] > ol > li {
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  padding: 0.6rem 0.75rem;
+  background: var(--panel-bg-recessed);
+}
+
+section[aria-label='Dispatch rules'] > ol > li[data-active='true'] {
+  border-color: var(--accent-amber);
+  background: #2c2410;
+  box-shadow: 0 0 10px rgba(224, 168, 63, 0.35), inset 0 0 8px rgba(224, 168, 63, 0.15);
+}
+
+section[aria-label='Dispatch rules'] [data-drag-over='true'] {
+  outline: 2px dashed var(--accent-amber);
+  outline-offset: 2px;
+}
+
+section[aria-label='Dispatch rules'] ol ol {
+  list-style: none;
+  margin: 0.4rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+section[aria-label='Dispatch rules'] p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
+
+/* -------------------------------------------------------------------- */
+/* End-of-shift report                                                  */
+/* -------------------------------------------------------------------- */
+
+section[aria-label='End-of-shift report'] ol {
+  padding-left: 1.4rem;
+}
+
+section[aria-label='End-of-shift report'] ol li {
+  margin-bottom: 0.3rem;
+}
+
+section[aria-label='End-of-shift report'] ol button {
+  text-align: left;
+  width: 100%;
+  background: var(--panel-bg-recessed);
+}
+
+/* -------------------------------------------------------------------- */
+/* Accessibility: focus states, visible everywhere, high contrast       */
+/* -------------------------------------------------------------------- */
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* -------------------------------------------------------------------- */
+/* Responsive: tablet width and down                                    */
+/* -------------------------------------------------------------------- */
+
+@media (max-width: 48rem) {
+  main {
+    padding: 1rem 0.75rem 3rem;
+  }
+
+  h1 {
+    font-size: 1rem;
+  }
+
+  .run-view__controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  section[aria-label='Dispatch rules'] > ol > li {
+    padding: 0.5rem;
+  }
 }

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { isSoundEnabled, playDelivered, playGaveUp, setSoundEnabled } from '../../audio/sound';
 import { computeGeometry, drawShift } from '../../render/canvas';
 import { PlaybackDriver } from '../../render/playback';
 import { activeRuleIdAt, groupRuleFiredByCar } from '../../render/ruleHighlight';
 import { TICK_RATE } from '../../sim/config';
 import type { SimResult } from '../../sim/simulate';
 import { PLAYBACK_SPEEDS, usePlaybackStore, type PlaybackSpeed } from '../../store/playbackStore';
+import { DotMatrixDisplay } from '../DotMatrixDisplay';
 
 const CANVAS_WIDTH = 640;
 const CANVAS_HEIGHT = 480;
@@ -27,8 +29,10 @@ export interface RunViewProps {
 export function RunView({ result, floors, carCount, watchedCarId = 0 }: RunViewProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const driverRef = useRef<PlaybackDriver | null>(null);
+  const eventIndexRef = useRef(0);
   const geometry = useMemo(() => computeGeometry(CANVAS_WIDTH, CANVAS_HEIGHT, floors, carCount), [floors, carCount]);
   const ruleFiredByCar = useMemo(() => groupRuleFiredByCar(result.events), [result]);
+  const [soundOn, setSoundOn] = useState(isSoundEnabled());
 
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const speed = usePlaybackStore((s) => s.speed);
@@ -36,12 +40,30 @@ export function RunView({ result, floors, carCount, watchedCarId = 0 }: RunViewP
   const seekRequestId = usePlaybackStore((s) => s.seekRequestId);
   const { toggle, setSpeed, setCurrentTick } = usePlaybackStore.getState();
 
+  function resyncEventPointer(tick: number): void {
+    let i = 0;
+    while (i < result.events.length && result.events[i]!.tick <= tick) i++;
+    eventIndexRef.current = i;
+  }
+
+  function playSoundsUpTo(flooredTick: number): void {
+    while (eventIndexRef.current < result.events.length && result.events[eventIndexRef.current]!.tick <= flooredTick) {
+      const event = result.events[eventIndexRef.current]!;
+      if (isSoundEnabled()) {
+        if (event.type === 'delivered') playDelivered();
+        else if (event.type === 'gave-up') playGaveUp();
+      }
+      eventIndexRef.current++;
+    }
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
 
     usePlaybackStore.setState({ isPlaying: false, currentTick: 0, activeRuleId: null });
+    eventIndexRef.current = 0;
     const watchedCarEvents = ruleFiredByCar.get(watchedCarId);
 
     const driver = new PlaybackDriver({
@@ -51,6 +73,7 @@ export function RunView({ result, floors, carCount, watchedCarId = 0 }: RunViewP
       onTick: (tick) => {
         drawShift(ctx, result, geometry, tick);
         usePlaybackStore.setState({ currentTick: tick });
+        playSoundsUpTo(Math.floor(tick));
 
         const active = activeRuleIdAt(watchedCarEvents, tick);
         if (active !== usePlaybackStore.getState().activeRuleId) {
@@ -68,11 +91,13 @@ export function RunView({ result, floors, carCount, watchedCarId = 0 }: RunViewP
       driver.stop();
       driverRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- playSoundsUpTo/resyncEventPointer close over result, which is already a dep
   }, [result, geometry, ruleFiredByCar, watchedCarId]);
 
   function handleScrub(tick: number): void {
     driverRef.current?.seek(tick);
     setCurrentTick(tick);
+    resyncEventPointer(tick);
   }
 
   // Requests to jump the playhead from outside this component (the "worst
@@ -85,17 +110,23 @@ export function RunView({ result, floors, carCount, watchedCarId = 0 }: RunViewP
       return;
     }
     const tick = usePlaybackStore.getState().seekRequestTick;
-    driverRef.current?.seek(tick);
-    setCurrentTick(tick);
+    handleScrub(tick);
     const ctx = canvasRef.current?.getContext('2d');
     if (ctx) drawShift(ctx, result, geometry, tick);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setCurrentTick is a stable zustand action reference
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setCurrentTick/handleScrub are stable across renders
   }, [seekRequestId, result, geometry]);
 
+  const watchedFrame = result.frames[Math.min(Math.floor(currentTick), result.frames.length - 1)]?.[watchedCarId];
+  const floorReadout = watchedFrame ? String(Math.max(0, Math.round(watchedFrame.position))).padStart(2, '0') : '--';
+
   return (
-    <section aria-label="Shift playback">
+    <section aria-label="Shift playback" className="run-view">
+      <div className="run-view__instruments">
+        <DotMatrixDisplay value={floorReadout} label="Current floor" />
+        <DotMatrixDisplay value={formatTick(currentTick)} label="Shift clock" />
+      </div>
       <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} role="img" aria-label="Elevator shaft simulation" />
-      <div>
+      <div className="run-view__controls">
         <button type="button" onClick={toggle} aria-pressed={isPlaying}>
           {isPlaying ? 'Pause' : 'Play'}
         </button>
@@ -104,6 +135,17 @@ export function RunView({ result, floors, carCount, watchedCarId = 0 }: RunViewP
             {s}x
           </button>
         ))}
+        <label>
+          <input
+            type="checkbox"
+            checked={soundOn}
+            onChange={(e) => {
+              setSoundEnabled(e.target.checked);
+              setSoundOn(e.target.checked);
+            }}
+          />
+          Sound
+        </label>
         <label>
           {formatTick(currentTick)} / {formatTick(result.frames.length)}
           <input
